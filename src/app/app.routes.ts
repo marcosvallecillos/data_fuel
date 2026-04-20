@@ -12,6 +12,10 @@ export const routes: Routes = [
         component: DashboardComponent
     },
     {
+        path: 'favoritos',
+        loadComponent: () => import('./core/features/favoritos/favoritos.component').then(m => m.FavoritosComponent)
+    },
+    {
         path: '**',
         redirectTo: '/dashboard'
     }

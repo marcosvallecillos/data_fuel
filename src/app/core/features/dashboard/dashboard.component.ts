@@ -1,5 +1,6 @@
 import { Component, OnInit, inject, signal, computed, effect, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { RouterModule } from '@angular/router';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { GasStationService } from '../../services/gas-station.service';
 import { FavoritosService } from '../../services/favoritos.service';
@@ -30,6 +31,7 @@ import { ChartsComponent } from '../charts/charts.component';
   imports: [
     CommonModule,
     ReactiveFormsModule,
+    RouterModule,
     MapComponent,
     ChartsComponent
   ],

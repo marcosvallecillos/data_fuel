@@ -8,7 +8,9 @@ import {
   EventEmitter,
   inject,
   signal,
-  ChangeDetectionStrategy
+  ChangeDetectionStrategy,
+  OnChanges,
+  SimpleChanges
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import * as L from 'leaflet';
@@ -230,7 +232,7 @@ import { FavoritosService } from '../../services/favoritos.service';
     }
   `]
 })
-export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
+export class MapComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges {
   private readonly favoritosService = inject(FavoritosService);
   
   // ============================================================================
@@ -278,6 +280,12 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy {
       this.inicializarMapa();
       this.cargarEstaciones();
     }, 0);
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (this.map && (changes['estaciones'] || changes['combustibleSeleccionado'])) {
+      this.cargarEstaciones();
+    }
   }
 
   ngOnDestroy(): void {
