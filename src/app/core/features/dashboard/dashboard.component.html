@@ -1,0 +1,383 @@
+<!-- ============================================================================ -->
+<!-- GAS-TREND PRO - DASHBOARD PRINCIPAL                                        -->
+<!-- Layout: Two-panel split view (Control & Data Insights)                     -->
+<!-- ============================================================================ -->
+
+<div class="dashboard-container">
+  
+  <!-- ========================================================================== -->
+  <!-- HEADER - Barra superior con logo y estado                                 -->
+  <!-- ========================================================================== -->
+  <header class="dashboard-header">
+    <div class="header-content">
+      <div class="logo-section">
+        <h1 class="logo">⛽ Gas-Trend Pro</h1>
+        <p class="tagline">Monitorización Inteligente de Gasolineras</p>
+      </div>
+      
+      <div class="header-stats">
+        @if (resultadoBusqueda()) {
+          <div class="stat-card">
+            <span class="stat-label">Estaciones</span>
+            <span class="stat-value">{{ totalEstaciones() }}</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Precio medio</span>
+            <span class="stat-value">{{ formatearPrecio(precioMedio()) }}</span>
+          </div>
+        }
+        
+        @if (cargando | async) {
+          <div class="loading-indicator">
+            <span class="spinner"></span>
+            <span>Cargando...</span>
+          </div>
+        }
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================================== -->
+  <!-- MAIN CONTENT - Layout de dos paneles                                       -->
+  <!-- ========================================================================== -->
+  <div class="main-content">
+    
+    <!-- ====================================================================== -->
+    <!-- PANEL IZQUIERDO - Control & Search                                     -->
+    <!-- ====================================================================== -->
+    <aside class="left-panel">
+      <div class="panel-header">
+        <h2>🔍 Búsqueda y Filtros</h2>
+      </div>
+
+      <form [formGroup]="searchForm" class="search-form">
+        
+        <!-- Sección: Ubicación -->
+        <div class="form-section">
+          <h3 class="section-title">📍 Ubicación</h3>
+          
+          <div class="form-row">
+            <label class="checkbox-label">
+              <input type="checkbox" formControlName="usarGPS">
+              <span>Usar mi ubicación GPS</span>
+            </label>
+          </div>
+
+          @if (searchForm.value.usarGPS) {
+            <div class="form-row">
+              <label class="form-label">Radio de búsqueda (km)</label>
+              <input 
+                type="number" 
+                formControlName="radioKm"
+                class="form-input"
+                min="1"
+                max="100">
+            </div>
+          } @else {
+            <div class="form-row">
+              <label class="form-label">Código Postal</label>
+              <input 
+                type="text" 
+                formControlName="codigoPostal"
+                class="form-input"
+                placeholder="28001"
+                maxlength="5">
+            </div>
+
+            <div class="form-row">
+              <label class="form-label">Provincia</label>
+              <select formControlName="provinciaId" class="form-select">
+                <option value="">Selecciona provincia</option>
+                @for (provincia of provincias(); track provincia.IDPovincia) {
+                  <option [value]="provincia.IDPovincia">
+                    {{ provincia.Provincia }}
+                  </option>
+                }
+              </select>
+            </div>
+
+            @if (municipios().length > 0) {
+              <div class="form-row">
+                <label class="form-label">Municipio</label>
+                <select formControlName="municipioId" class="form-select">
+                  <option value="">Todos los municipios</option>
+                  @for (municipio of municipios(); track municipio.IDMunicipio) {
+                    <option [value]="municipio.IDMunicipio">
+                      {{ municipio.Municipio }}
+                    </option>
+                  }
+                </select>
+              </div>
+            }
+          }
+        </div>
+
+        <!-- Sección: Combustible -->
+        <div class="form-section">
+          <h3 class="section-title">⛽ Combustible</h3>
+          
+          <div class="combustible-grid">
+            @for (combustible of combustiblesInfo; track combustible.key) {
+              <label class="combustible-card" 
+                     [class.active]="searchForm.value.combustible === combustible.key">
+                <input 
+                  type="radio" 
+                  [value]="combustible.key"
+                  formControlName="combustible"
+                  class="combustible-radio">
+                <span class="combustible-icon">{{ combustible.icon }}</span>
+                <span class="combustible-label">{{ combustible.label }}</span>
+              </label>
+            }
+          </div>
+        </div>
+
+        <!-- Sección: Marcas -->
+        <div class="form-section">
+          <h3 class="section-title">🏢 Marcas</h3>
+          
+          @if (marcasDisponibles().length > 0) {
+            <div class="marcas-list">
+              @for (marca of marcasDisponibles().slice(0, 10); track marca) {
+                <label class="checkbox-label marca-item">
+                  <input 
+                    type="checkbox" 
+                    [checked]="searchForm.value.marcas?.includes(marca)"
+                    (change)="toggleMarca(marca)">
+                  <span>{{ marca }}</span>
+                </label>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- Sección: Filtros adicionales -->
+        <div class="form-section">
+          <h3 class="section-title">⚙️ Filtros</h3>
+          
+          <div class="form-row">
+            <label class="checkbox-label">
+              <input type="checkbox" formControlName="soloAbiertas">
+              <span>Solo estaciones abiertas ahora</span>
+            </label>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">Ordenar por</label>
+            <select formControlName="ordenarPor" class="form-select">
+              <option value="precio">Precio (menor a mayor)</option>
+              <option value="distancia">Distancia (más cerca)</option>
+              <option value="marca">Marca (A-Z)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Botones de acción -->
+        <div class="form-actions">
+          <button 
+            type="button"
+            (click)="buscar()"
+            class="btn btn-primary">
+            🔍 Buscar
+          </button>
+          <button 
+            type="button"
+            (click)="limpiarFiltros()"
+            class="btn btn-secondary">
+            🗑️ Limpiar
+          </button>
+        </div>
+      </form>
+    </aside>
+
+    <!-- ====================================================================== -->
+    <!-- PANEL DERECHO - Data Insights                                          -->
+    <!-- ====================================================================== -->
+    <main class="right-panel">
+      
+      <!-- Pestañas de vista -->
+      <div class="view-tabs">
+        <button 
+          class="tab-btn"
+          [class.active]="vistaActiva() === 'mapa'"
+          (click)="cambiarVista('mapa')">
+          🗺️ Mapa
+        </button>
+        <button 
+          class="tab-btn"
+          [class.active]="vistaActiva() === 'lista'"
+          (click)="cambiarVista('lista')">
+          📋 Lista
+        </button>
+        <button 
+          class="tab-btn"
+          [class.active]="vistaActiva() === 'graficas'"
+          (click)="cambiarVista('graficas')">
+          📊 Gráficas
+        </button>
+      </div>
+
+      <!-- Contenido según vista activa -->
+      <div class="view-content">
+        
+        <!-- Vista: Mapa -->
+        @if (vistaActiva() === 'mapa') {
+          <div class="map-container">
+            <app-map
+              [estaciones]="estacionesFiltradas()"
+              [combustibleSeleccionado]="searchForm.value.combustible"
+              [centroInicial]="ubicacionUsuario()"
+              (estacionSeleccionada)="onEstacionSeleccionada($event)">
+            </app-map>
+          </div>
+        }
+
+        <!-- Vista: Lista -->
+        @if (vistaActiva() === 'lista') {
+          <div class="lista-container">
+            @if (estacionesFiltradas().length === 0) {
+              <div class="empty-state">
+                <p class="empty-icon">🔍</p>
+                <p class="empty-text">No se encontraron estaciones</p>
+                <p class="empty-hint">Prueba a cambiar los filtros de búsqueda</p>
+              </div>
+            } @else {
+              <div class="estaciones-grid">
+                @for (estacion of estacionesFiltradas(); track estacion.id) {
+                  <div class="estacion-card">
+                    <div class="card-header">
+                      <h3 class="card-title">{{ estacion.marca }}</h3>
+                      <button 
+                        class="btn-icon"
+                        [class.favorito]="esFavorito(estacion.id)"
+                        (click)="toggleFavorito(estacion)"
+                        title="Añadir a favoritos">
+                        {{ esFavorito(estacion.id) ? '⭐' : '☆' }}
+                      </button>
+                    </div>
+                    
+                    <div class="card-body">
+                      <p class="card-address">{{ estacion.direccion }}</p>
+                      <p class="card-location">{{ estacion.municipio }}, {{ estacion.provincia }}</p>
+                      
+                      <div class="card-price">
+                        <span class="price-value">
+                          {{ formatearPrecio(obtenerPrecioEstacion(estacion, searchForm.value.combustible)) }}
+                        </span>
+                        <span class="price-label">
+                          {{ obtenerIconoCombustible(searchForm.value.combustible) }}
+                        </span>
+                      </div>
+                      
+                      @if (estacion.distancia) {
+                        <p class="card-distance">📏 {{ estacion.distancia.toFixed(1) }} km</p>
+                      }
+                      
+                      @if (estacion.estaAbierta !== undefined) {
+                        <p class="card-status" [class.abierta]="estacion.estaAbierta">
+                          {{ estacion.estaAbierta ? '🟢 Abierta' : '🔴 Cerrada' }}
+                        </p>
+                      }
+                    </div>
+                    
+                    <div class="card-actions">
+                      <button 
+                        class="btn btn-small btn-primary"
+                        (click)="crearAlerta(estacion)">
+                        🔔 Alerta
+                      </button>
+                      <button 
+                        class="btn btn-small btn-secondary"
+                        (click)="onEstacionSeleccionada(estacion)">
+                        Ver más
+                      </button>
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        }
+
+        <!-- Vista: Gráficas -->
+        @if (vistaActiva() === 'graficas') {
+          <div class="graficas-container">
+            <app-charts
+              [estaciones]="estacionesFiltradas()"
+              [estacionSeleccionada]="estacionSeleccionada() || undefined"
+              [combustible]="searchForm.value.combustible">
+            </app-charts>
+          </div>
+        }
+      </div>
+    </main>
+  </div>
+
+  <!-- ========================================================================== -->
+  <!-- PANEL LATERAL - Detalles de estación seleccionada                         -->
+  <!-- ========================================================================== -->
+  @if (estacionSeleccionada()) {
+    <div class="side-panel" [class.visible]="estacionSeleccionada()">
+      <div class="side-panel-header">
+        <h3>Detalles de la estación</h3>
+        <button 
+          class="btn-close"
+          (click)="estacionSeleccionada.set(null)">
+          ✕
+        </button>
+      </div>
+      
+      <div class="side-panel-content">
+        @if (estacionSeleccionada(); as estacion) {
+          <h2 class="detalle-titulo">{{ estacion.marca }}</h2>
+          <p class="detalle-direccion">{{ estacion.direccion }}</p>
+          <p class="detalle-ubicacion">{{ estacion.codigoPostal }} - {{ estacion.municipio }}</p>
+          
+          <div class="detalle-section">
+            <h4>💰 Precios actuales</h4>
+            <div class="precios-lista">
+              @if (estacion.precios.gasoleoA) {
+                <div class="precio-item">
+                  <span>🛢️ Gasóleo A</span>
+                  <strong>{{ formatearPrecio(estacion.precios.gasoleoA) }}</strong>
+                </div>
+              }
+              @if (estacion.precios.gasolina95) {
+                <div class="precio-item">
+                  <span>⛽ Gasolina 95</span>
+                  <strong>{{ formatearPrecio(estacion.precios.gasolina95) }}</strong>
+                </div>
+              }
+              @if (estacion.precios.gasolina98) {
+                <div class="precio-item">
+                  <span>⛽ Gasolina 98</span>
+                  <strong>{{ formatearPrecio(estacion.precios.gasolina98) }}</strong>
+                </div>
+              }
+            </div>
+          </div>
+          
+          @if (estacion.horario) {
+            <div class="detalle-section">
+              <h4>🕐 Horario</h4>
+              <p>{{ estacion.horario }}</p>
+            </div>
+          }
+          
+          <div class="detalle-actions">
+            <button 
+              class="btn btn-primary btn-block"
+              (click)="toggleFavorito(estacion)">
+              {{ esFavorito(estacion.id) ? '⭐ Eliminar favorito' : '☆ Añadir favorito' }}
+            </button>
+            <button 
+              class="btn btn-secondary btn-block"
+              (click)="crearAlerta(estacion)">
+              🔔 Crear alerta de precio
+            </button>
+          </div>
+        }
+      </div>
+    </div>
+  }
+</div>

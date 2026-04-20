@@ -1,0 +1,72 @@
+<div class="favoritos-container">
+  <header class="dashboard-header">
+    <div class="header-content">
+      <div class="logo-section">
+        <h1 class="logo">⭐ Mis Favoritos</h1>
+        <p class="tagline">Tus gasolineras guardadas y preferidas</p>
+      </div>
+      
+      <div class="header-actions">
+        <button class="btn btn-secondary" routerLink="/dashboard">
+          🔙 Volver al Dashboard
+        </button>
+        @if (favoritosService.tieneFavoritos()) {
+          <button class="btn btn-danger" (click)="limpiarTodos()">
+            🗑️ Limpiar Todos
+          </button>
+        }
+      </div>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <div class="lista-container">
+      @if (!favoritosService.tieneFavoritos()) {
+        <div class="empty-state">
+          <p class="empty-icon">⭐</p>
+          <p class="empty-text">Aún no tienes gasolineras favoritas</p>
+          <p class="empty-hint">Vuelve al dashboard y pulsa la estrella en tus estaciones preferidas</p>
+          <button class="btn btn-primary" style="margin-top: 1rem;" routerLink="/dashboard">Buscar Gasolineras</button>
+        </div>
+      } @else {
+        <div class="estaciones-grid">
+          @for (favorito of favoritosService.favoritos(); track favorito.estacionId) {
+            <div class="estacion-card">
+              <div class="card-header">
+                <h3 class="card-title">{{ favorito.alias || favorito.estacion.marca }}</h3>
+                <button 
+                  class="btn-icon favorito"
+                  (click)="eliminarFavorito(favorito.estacionId)"
+                  title="Eliminar de favoritos">
+                  ⭐
+                </button>
+              </div>
+              
+              <div class="card-body">
+                <p class="card-address">{{ favorito.estacion.direccion }}</p>
+                <p class="card-location">{{ favorito.estacion.municipio }}, {{ favorito.estacion.provincia }}</p>
+                
+                <div class="card-price-list">
+                  @if (obtenerPrecioEstacion(favorito.estacion, TipoCombustible.GASOLINA_95)) {
+                    <div class="card-price">
+                      <span class="price-value">{{ formatearPrecio(obtenerPrecioEstacion(favorito.estacion, TipoCombustible.GASOLINA_95)) }}</span>
+                      <span class="price-label">⛽ G95</span>
+                    </div>
+                  }
+                  @if (obtenerPrecioEstacion(favorito.estacion, TipoCombustible.GASOLEO_A)) {
+                    <div class="card-price">
+                      <span class="price-value">{{ formatearPrecio(obtenerPrecioEstacion(favorito.estacion, TipoCombustible.GASOLEO_A)) }}</span>
+                      <span class="price-label">🛢️ Gasóleo A</span>
+                    </div>
+                  }
+                </div>
+                
+                <p class="card-date">Añadida: {{ favorito.fechaAgregado | date:'shortDate' }}</p>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  </main>
+</div>
