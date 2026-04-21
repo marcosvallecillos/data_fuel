@@ -294,3 +294,99 @@ export const MARCAS_PRINCIPALES = [
   'PLENOIL',
   'ALCAMPO'
 ] as const;
+
+// ============================================================================
+// COMPARACIÓN DE ESTACIONES
+// ============================================================================
+
+/**
+ * Comparación entre múltiples estaciones
+ */
+export interface ComparacionEstaciones {
+  estaciones: GasStation[];
+  combustible: TipoCombustible;
+  timestamp: Date;
+  mejorPrecio: {
+    estacion: GasStation;
+    precio: number;
+  };
+  peorPrecio: {
+    estacion: GasStation;
+    precio: number;
+  };
+  diferenciaMaxima: number;
+  ahorroMensual?: number; // Basado en consumo estimado
+}
+
+/**
+ * Parámetros para cálculo de ahorro
+ */
+export interface ParametrosAhorro {
+  litrosPorMes: number;
+  combustible: TipoCombustible;
+}
+
+// ============================================================================
+// RUTAS Y NAVEGACIÓN
+// ============================================================================
+
+/**
+ * Punto de origen para cálculo de rutas
+ */
+export interface OrigenRuta {
+  tipo: 'gps' | 'manual' | 'favorito';
+  coordenadas: Coordenadas;
+  direccion?: string;
+  nombre?: string; // Para favoritos (ej: "Casa", "Trabajo")
+}
+
+/**
+ * Paso de una ruta (instrucción de navegación)
+ */
+export interface PasoRuta {
+  distancia: number; // En metros
+  duracion: number; // En segundos
+  instruccion: string;
+  tipo: 'straight' | 'turn-left' | 'turn-right' | 'roundabout' | 'destination';
+  coordenadas: Coordenadas;
+}
+
+/**
+ * Información completa de una ruta
+ */
+export interface InformacionRuta {
+  origen: OrigenRuta;
+  destino: GasStation;
+  distanciaTotal: number; // En km
+  duracionEstimada: number; // En minutos
+  pasos: PasoRuta[];
+  polyline: Coordenadas[]; // Coordenadas para dibujar la línea en el mapa
+  modoTransporte: 'driving' | 'walking' | 'cycling';
+  timestamp: Date;
+}
+
+/**
+ * Resultado de búsqueda de direcciones (geocoding)
+ */
+export interface ResultadoDireccion {
+  direccion: string;
+  coordenadas: Coordenadas;
+  confianza: number; // 0-1
+  detalles?: {
+    calle?: string;
+    numero?: string;
+    codigoPostal?: string;
+    municipio?: string;
+    provincia?: string;
+  };
+}
+
+/**
+ * Opciones para cálculo de ruta
+ */
+export interface OpcionesRuta {
+  modoTransporte: 'driving' | 'walking' | 'cycling';
+  evitarAutopistas?: boolean;
+  evitarPeajes?: boolean;
+  optimizarPara: 'distancia' | 'tiempo';
+}

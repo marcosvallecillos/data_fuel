@@ -17,11 +17,11 @@
       
       <div class="header-stats">
         @if (resultadoBusqueda()) {
-          <div class="stat-card" style="cursor: pointer;" routerLink="/favoritos">
+ <div class="stat-card" style="cursor: pointer;" routerLink="/favoritos">
             <span class="stat-label">Favoritos</span>
             <span class="stat-value">⭐</span>
           </div>
-          <div class="stat-card">
+                    <div class="stat-card">
             <span class="stat-label">Estaciones</span>
             <span class="stat-value">{{ totalEstaciones() }}</span>
           </div>
@@ -29,6 +29,16 @@
             <span class="stat-label">Precio medio</span>
             <span class="stat-value">{{ formatearPrecio(precioMedio()) }}</span>
           </div>
+        }
+        
+        <!-- Botón de comparación -->
+        @if (totalComparaciones() > 0) {
+          <button 
+            class="btn-comparacion"
+            (click)="abrirComparacion()"
+            [class.pulsante]="totalComparaciones() >= 2">
+            ⚖️ Comparar ({{ totalComparaciones() }})
+          </button>
         }
         
         @if (cargando | async) {
@@ -286,14 +296,22 @@
                     
                     <div class="card-actions">
                       <button 
-                        class="btn btn-small btn-primary"
-                        (click)="crearAlerta(estacion)">
-                        🔔 Alerta
+                        class="btn btn-small"
+                        [class.btn-primary]="!estaEnComparacion(estacion.id)"
+                        [class.btn-success]="estaEnComparacion(estacion.id)"
+                        (click)="toggleComparacion(estacion)"
+                        [disabled]="!estaEnComparacion(estacion.id) && !puedeCompararMas()">
+                        {{ estaEnComparacion(estacion.id) ? '✓ Comparando' : '⚖️ Comparar' }}
                       </button>
                       <button 
                         class="btn btn-small btn-secondary"
-                        (click)="onEstacionSeleccionada(estacion)">
-                        Ver más
+                        (click)="abrirCalculadoraRutas(estacion)">
+                        🗺️ Ruta
+                      </button>
+                      <button 
+                        class="btn btn-small btn-secondary"
+                        (click)="crearAlerta(estacion)">
+                        🔔 Alerta
                       </button>
                     </div>
                   </div>
@@ -306,11 +324,11 @@
         <!-- Vista: Gráficas -->
         @if (vistaActiva() === 'graficas') {
           <div class="graficas-container">
-            <app-charts
-              [estaciones]="estacionesFiltradas()"
-              [estacionSeleccionada]="estacionSeleccionada() || undefined"
-              [combustible]="searchForm.value.combustible">
-            </app-charts>
+            <div class="placeholder">
+              <p class="placeholder-icon">📊</p>
+              <p class="placeholder-text">Vista de gráficas en desarrollo</p>
+              <p class="placeholder-hint">Aquí se mostrará la evolución de precios</p>
+            </div>
           </div>
         }
       </div>
@@ -385,3 +403,22 @@
     </div>
   }
 </div>
+
+<!-- ============================================================================ -->
+<!-- MODALES                                                                      -->
+<!-- ============================================================================ -->
+
+<!-- Modal de Comparación -->
+<app-comparacion-modal
+  [(visible)]="mostrarModalComparacion"
+  (rutaSolicitada)="abrirCalculadoraRutas($event)">
+</app-comparacion-modal>
+
+<!-- Modal de Rutas -->
+@if (estacionParaRuta()) {
+  <app-rutas-modal
+    [(visible)]="mostrarModalRutas"
+    [estacion]="estacionParaRuta()!"
+    (rutaCalculadaEvent)="onRutaCalculada($event)">
+  </app-rutas-modal>
+}

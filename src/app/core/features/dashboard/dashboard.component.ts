@@ -1,10 +1,10 @@
-import { Component, OnInit, inject, signal, computed, effect, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, inject, signal, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { GasStationService } from '../../services/gas-station.service';
-import { FavoritosService } from '../../services/favoritos.service';
-import { AlertasService } from '../../services/alertas.service';
+import { MapComponent } from '../map/map.component';
+import { ComparacionModalComponent } from '../comparacion/comparacion-modal.component';
+import { RutasModalComponent } from '../rutas/rutas-modal.component';
+
 import {
   GasStation,
   TipoCombustible,
@@ -13,10 +13,13 @@ import {
   COMBUSTIBLES_INFO,
   Coordenadas,
   Provincia,
-  Municipio
+  Municipio,
+  InformacionRuta
 } from '../../models/gas-station.models';
-import { MapComponent } from '../map/map.component';
-import { ChartsComponent } from '../charts/charts.component';
+import { GasStationService } from '../../services/gas-station.service';
+import { FavoritosService } from '../../services/favoritos.service';
+import { AlertasService } from '../../services/alertas.service';
+import { ComparacionService } from '../../services/comparacion.service';
 
 /**
  * Componente principal del dashboard de Gas-Trend Pro
@@ -31,11 +34,10 @@ import { ChartsComponent } from '../charts/charts.component';
   imports: [
     CommonModule,
     ReactiveFormsModule,
-    RouterModule,
     MapComponent,
-    ChartsComponent
+    ComparacionModalComponent,
+    RutasModalComponent
   ],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.css']
 })
@@ -44,47 +46,61 @@ export class DashboardComponent implements OnInit {
   private readonly gasStationService = inject(GasStationService);
   private readonly favoritosService = inject(FavoritosService);
   private readonly alertasService = inject(AlertasService);
+  private readonly comparacionService = inject(ComparacionService);
 
   // ============================================================================
   // SIGNALS Y ESTADO REACTIVO
   // ============================================================================
-
+  
   // Estado de carga
   cargando = this.gasStationService.loading$;
-
+  
   // Estaciones y resultados
   todasEstaciones = signal<GasStation[]>([]);
   resultadoBusqueda = signal<ResultadoBusqueda | null>(null);
   estacionSeleccionada = signal<GasStation | null>(null);
-
+  
   // Ubicación del usuario
   ubicacionUsuario = signal<Coordenadas | undefined>(undefined);
-
+  
   // Listas para selectores
   provincias = signal<Provincia[]>([]);
   municipios = signal<Municipio[]>([]);
   marcasDisponibles = signal<string[]>([]);
-
+  
   // Vista activa (mapa, lista, gráficas)
   vistaActiva = signal<'mapa' | 'lista' | 'graficas'>('mapa');
-
+  
+  // Modales
+  mostrarModalComparacion = signal(false);
+  mostrarModalRutas = signal(false);
+  estacionParaRuta = signal<GasStation | null>(null);
+  
+  // Comparación
+  estacionesComparacion = this.comparacionService.estacionesComparacion;
+  totalComparaciones = this.comparacionService.totalComparaciones;
+  puedeCompararMas = this.comparacionService.puedeAgregarMas;
+  
+  // Ruta actual
+  rutaActual = signal<InformacionRuta | null>(null);
+  
   // Computed signals
-  estacionesFiltradas = computed(() =>
+  estacionesFiltradas = computed(() => 
     this.resultadoBusqueda()?.estaciones || []
   );
-
-  totalEstaciones = computed(() =>
+  
+  totalEstaciones = computed(() => 
     this.resultadoBusqueda()?.totalEncontradas || 0
   );
-
-  precioMedio = computed(() =>
+  
+  precioMedio = computed(() => 
     this.resultadoBusqueda()?.precioMedio || 0
   );
 
   // ============================================================================
   // FORMULARIOS REACTIVOS
   // ============================================================================
-
+  
   searchForm!: FormGroup;
   combustiblesInfo = COMBUSTIBLES_INFO;
   TipoCombustible = TipoCombustible;
@@ -92,7 +108,7 @@ export class DashboardComponent implements OnInit {
   // ============================================================================
   // LIFECYCLE HOOKS
   // ============================================================================
-
+  
   ngOnInit(): void {
     this.inicializarFormulario();
     this.cargarProvincias();
@@ -116,10 +132,10 @@ export class DashboardComponent implements OnInit {
       municipioId: [''],
       usarGPS: [false],
       radioKm: [40, [Validators.min(1), Validators.max(100)]],
-
+      
       // Combustible
       combustible: [TipoCombustible.GASOLINA_95, Validators.required],
-
+      
       // Filtros
       marcas: [[]],
       soloAbiertas: [false],
@@ -217,7 +233,7 @@ export class DashboardComponent implements OnInit {
    */
   buscar(): void {
     const valores = this.searchForm.value;
-
+    
     // Si se seleccionó un municipio específico, cargar solo ese
     if (valores.municipioId) {
       this.buscarPorMunicipio(valores.municipioId);
@@ -250,7 +266,7 @@ export class DashboardComponent implements OnInit {
    */
   private aplicarFiltros(): void {
     const valores = this.searchForm.value;
-
+    
     const filtros: FiltrosBusqueda = {
       combustible: valores.combustible,
       marcas: valores.marcas || [],
@@ -266,10 +282,10 @@ export class DashboardComponent implements OnInit {
     );
 
     this.resultadoBusqueda.set(resultado);
-
+    
     // Verificar alertas con los nuevos resultados
     this.alertasService.verificarAlertas(resultado.estaciones);
-
+    
     console.log(`🔍 Búsqueda completada: ${resultado.totalEncontradas} estaciones`);
   }
 
@@ -347,7 +363,7 @@ export class DashboardComponent implements OnInit {
    */
   toggleFavorito(estacion: GasStation): void {
     const esFavorito = this.favoritosService.esFavorito(estacion.id);
-
+    
     if (esFavorito) {
       this.favoritosService.eliminarFavorito(estacion.id);
     } else {
@@ -371,7 +387,7 @@ export class DashboardComponent implements OnInit {
   crearAlerta(estacion: GasStation): void {
     const combustible = this.searchForm.value.combustible;
     const precioActual = this.obtenerPrecioEstacion(estacion, combustible);
-
+    
     if (!precioActual) {
       alert('No hay precio disponible para este combustible');
       return;
@@ -405,7 +421,7 @@ export class DashboardComponent implements OnInit {
    * Obtiene el precio de un combustible de una estación
    */
   public obtenerPrecioEstacion(
-    estacion: GasStation,
+    estacion: GasStation, 
     combustible: TipoCombustible
   ): number | undefined {
     switch (combustible) {
@@ -446,7 +462,7 @@ export class DashboardComponent implements OnInit {
   toggleMarca(marca: string): void {
     const marcasActuales = this.searchForm.value.marcas || [];
     const index = marcasActuales.indexOf(marca);
-
+    
     let nuevasMarcas: string[];
     if (index > -1) {
       // Eliminar marca
@@ -455,7 +471,67 @@ export class DashboardComponent implements OnInit {
       // Agregar marca
       nuevasMarcas = [...marcasActuales, marca];
     }
-
+    
     this.searchForm.patchValue({ marcas: nuevasMarcas });
+  }
+
+  // ============================================================================
+  // MÉTODOS DE COMPARACIÓN
+  // ============================================================================
+
+  /**
+   * Agrega o elimina una estación de comparación
+   * @param estacion Estación a togglear
+   */
+  toggleComparacion(estacion: GasStation): void {
+    if (this.comparacionService.estaEnComparacion(estacion.id)) {
+      this.comparacionService.eliminarDeComparacion(estacion.id);
+    } else {
+      const agregado = this.comparacionService.agregarAComparacion(estacion);
+      if (!agregado) {
+        alert('Máximo 3 estaciones para comparar');
+      }
+    }
+  }
+
+  /**
+   * Verifica si una estación está en comparación
+   */
+  estaEnComparacion(estacionId: string): boolean {
+    return this.comparacionService.estaEnComparacion(estacionId);
+  }
+
+  /**
+   * Abre el modal de comparación
+   */
+  abrirComparacion(): void {
+    if (this.totalComparaciones() < 2) {
+      alert('Selecciona al menos 2 estaciones para comparar');
+      return;
+    }
+    this.mostrarModalComparacion.set(true);
+  }
+
+  // ============================================================================
+  // MÉTODOS DE RUTAS
+  // ============================================================================
+
+  /**
+   * Abre el modal de rutas para una estación
+   * @param estacion Estación destino
+   */
+  abrirCalculadoraRutas(estacion: GasStation): void {
+    this.estacionParaRuta.set(estacion);
+    this.mostrarModalRutas.set(true);
+  }
+
+  /**
+   * Maneja la ruta calculada desde el modal
+   * @param ruta Información de la ruta
+   */
+  onRutaCalculada(ruta: InformacionRuta): void {
+    this.rutaActual.set(ruta);
+    // Aquí puedes actualizar el mapa para mostrar la ruta
+    console.log('✅ Ruta calculada:', ruta);
   }
 }
