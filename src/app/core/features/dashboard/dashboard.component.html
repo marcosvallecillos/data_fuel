@@ -17,9 +17,9 @@
       
       <div class="header-stats">
         @if (resultadoBusqueda()) {
- <div class="stat-card" style="cursor: pointer;" routerLink="/favoritos">
+          <div class="stat-card" style="cursor: pointer;" (click)="cambiarVista('favoritos')" [class.active-view]="vistaActiva() === 'favoritos'">
             <span class="stat-label">Favoritos</span>
-            <span class="stat-value">⭐</span>
+            <span class="stat-value">⭐ ({{ estacionesFavoritas().length }})</span>
           </div>
                     <div class="stat-card">
             <span class="stat-label">Estaciones</span>
@@ -152,7 +152,7 @@
           
           @if (marcasDisponibles().length > 0) {
             <div class="marcas-list">
-              @for (marca of marcasDisponibles().slice(0, 10); track marca) {
+              @for (marca of marcasDisponibles().slice(0, 20); track marca) {
                 <label class="checkbox-label marca-item">
                   <input 
                     type="checkbox" 
@@ -229,13 +229,19 @@
           (click)="cambiarVista('graficas')">
           📊 Gráficas
         </button>
+        <button 
+          class="tab-btn"
+          [class.active]="vistaActiva() === 'favoritos'"
+          (click)="cambiarVista('favoritos')">
+          ⭐ Mis Favoritos
+        </button>
       </div>
 
       <!-- Contenido según vista activa -->
       <div class="view-content">
         
         <!-- Vista: Mapa -->
-        @if (vistaActiva() === 'mapa') {
+        @if (vistaActiva() === 'mapa' || vistaActiva() === 'favoritos') {
           <div class="map-container">
             <app-map
               [estaciones]="estacionesFiltradas()"
@@ -247,7 +253,7 @@
         }
 
         <!-- Vista: Lista -->
-        @if (vistaActiva() === 'lista') {
+        @if (vistaActiva() === 'lista' || vistaActiva() === 'favoritos') {
           <div class="lista-container">
             @if (estacionesFiltradas().length === 0) {
               <div class="empty-state">
@@ -324,11 +330,9 @@
         <!-- Vista: Gráficas -->
         @if (vistaActiva() === 'graficas') {
           <div class="graficas-container">
-            <div class="placeholder">
-              <p class="placeholder-icon">📊</p>
-              <p class="placeholder-text">Vista de gráficas en desarrollo</p>
-              <p class="placeholder-hint">Aquí se mostrará la evolución de precios</p>
-            </div>
+            <app-graficas
+              [provincias]="provincias()">
+            </app-graficas>
           </div>
         }
       </div>
@@ -397,6 +401,14 @@
               (click)="crearAlerta(estacion)">
               🔔 Crear alerta de precio
             </button>
+              <button 
+                        class="btn btn-small"
+                        [class.btn-primary]="!estaEnComparacion(estacion.id)"
+                        [class.btn-success]="estaEnComparacion(estacion.id)"
+                        (click)="toggleComparacion(estacion)"
+                        [disabled]="!estaEnComparacion(estacion.id) && !puedeCompararMas()">
+                        {{ estaEnComparacion(estacion.id) ? '✓ Comparando' : '⚖️ Comparar' }}
+                      </button>
           </div>
         }
       </div>

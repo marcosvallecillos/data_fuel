@@ -65,7 +65,8 @@ import {
                   <input 
                     type="radio" 
                     [(ngModel)]="tipoOrigen" 
-                    value="manual">
+                    value="manual"
+                    (change)="onTipoOrigenChange()">
                   <span>✍️ Introducir dirección manualmente</span>
                 </label>
               </div>
@@ -74,12 +75,17 @@ import {
               @if (tipoOrigen === 'manual') {
                 <div class="direccion-manual">
                   <label>Dirección de origen:</label>
-                  <input 
-                    type="text" 
-                    [(ngModel)]="direccionManual"
-                    (input)="onDireccionChange()"
-                    placeholder="Ej: Calle Mayor 1, Madrid"
-                    class="form-input">
+                  <div class="input-with-spinner">
+                    <input 
+                      type="text" 
+                      [(ngModel)]="direccionManual"
+                      (input)="onDireccionChange()"
+                      placeholder="Ej: Calle Mayor 1, Madrid"
+                      class="form-input">
+                    @if (buscando()) {
+                      <span class="spinner-small"></span>
+                    }
+                  </div>
                   
                   <!-- Resultados de geocoding -->
                   @if (resultadosDireccion().length > 0) {
@@ -89,9 +95,16 @@ import {
                           class="resultado-item"
                           (click)="seleccionarDireccion(resultado)">
                           <strong>{{ resultado.direccion }}</strong>
-                          <small>Confianza: {{ (resultado.confianza * 100).toFixed(0) }}%</small>
+                          <div class="resultado-meta">
+                            <span>📍 {{ resultado.detalles?.municipio || '---' }}, {{ resultado.detalles?.provincia || '---' }}</span>
+                            <small>{{ (resultado.confianza * 100).toFixed(0) }}% certidumbre</small>
+                          </div>
                         </div>
                       }
+                    </div>
+                  } @else if (direccionManual.length >= 3 && !buscando() && tipoOrigen === 'manual') {
+                    <div class="no-results">
+                      <small>No se encontraron resultados para "{{ direccionManual }}". Intenta ser más específico.</small>
                     </div>
                   }
                 </div>
@@ -191,7 +204,7 @@ import {
                         </div>
                       </div>
                     </div>
-                  }RutasModalComponent
+                  }
                 </div>
               </div>
 
@@ -207,8 +220,8 @@ import {
             </div>
           }
 
-          <!-- Error -->
-          @if (error()) {
+          <!-- Error (Solo mostrar si es relevante para el modo actual o es error general) -->
+          @if (error() && (tipoOrigen === 'gps' || !error()!.includes('GPS'))) {
             <div class="error-message">
               <p class="error-icon">⚠️</p>
               <p>{{ error() }}</p>
@@ -388,6 +401,23 @@ import {
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
     }
 
+    .input-with-spinner {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .spinner-small {
+      position: absolute;
+      right: 12px;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #e2e8f0;
+      border-top-color: #2563eb;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
     .resultados-direccion {
       margin-top: 8px;
       border: 1px solid #e2e8f0;
@@ -416,12 +446,25 @@ import {
       display: block;
       font-size: 14px;
       color: #1e293b;
-      margin-bottom: 4px;
+      margin-bottom: 2px;
     }
 
-    .resultado-item small {
+    .resultado-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       font-size: 12px;
       color: #64748b;
+    }
+
+    .no-results {
+      margin-top: 8px;
+      padding: 12px;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 6px;
+      color: #92400e;
+      text-align: center;
     }
 
     .opciones-ruta {
@@ -667,6 +710,7 @@ export class RutasModalComponent implements OnInit {
   // Estado
   paso = signal<'configuracion' | 'resultado'>('configuracion');
   calculando = signal(false);
+  buscando = signal(false);
   error = signal<string | null>(null);
 
   // Configuración
@@ -707,9 +751,11 @@ export class RutasModalComponent implements OnInit {
     if (this.direccionManual.length < 3) {
       this.resultadosDireccion.set([]);
       this.origenValido.set(false);
+      this.buscando.set(false);
       return;
     }
 
+    this.buscando.set(true);
     this.busquedaDireccionTimeout = setTimeout(() => {
       this.buscarDireccion();
     }, 500);
@@ -740,9 +786,11 @@ export class RutasModalComponent implements OnInit {
     this.rutasService.buscarDireccion(this.direccionManual).subscribe({
       next: (resultados) => {
         this.resultadosDireccion.set(resultados);
+        this.buscando.set(false);
       },
       error: (error) => {
         console.error('Error buscando dirección:', error);
+        this.buscando.set(false);
       }
     });
   }

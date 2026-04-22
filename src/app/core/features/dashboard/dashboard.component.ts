@@ -4,6 +4,7 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { MapComponent } from '../map/map.component';
 import { ComparacionModalComponent } from '../comparacion/comparacion-modal.component';
 import { RutasModalComponent } from '../rutas/rutas-modal.component';
+import { GraficasComponent } from './graficas.component';
 
 import {
   GasStation,
@@ -14,7 +15,8 @@ import {
   Coordenadas,
   Provincia,
   Municipio,
-  InformacionRuta
+  InformacionRuta,
+  MARCAS_PRINCIPALES
 } from '../../models/gas-station.models';
 import { GasStationService } from '../../services/gas-station.service';
 import { FavoritosService } from '../../services/favoritos.service';
@@ -36,7 +38,8 @@ import { ComparacionService } from '../../services/comparacion.service';
     ReactiveFormsModule,
     MapComponent,
     ComparacionModalComponent,
-    RutasModalComponent
+    RutasModalComponent,
+    GraficasComponent
   ],
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.css']
@@ -68,8 +71,11 @@ export class DashboardComponent implements OnInit {
   municipios = signal<Municipio[]>([]);
   marcasDisponibles = signal<string[]>([]);
   
-  // Vista activa (mapa, lista, gráficas)
-  vistaActiva = signal<'mapa' | 'lista' | 'graficas'>('mapa');
+  // Vista activa (mapa, lista, gráficas, favoritos)
+  vistaActiva = signal<'mapa' | 'lista' | 'graficas' | 'favoritos'>('mapa');
+  
+  // Caché completa de estaciones para filtrado local (evita sobreescribir con búsquedas parciales)
+  estacionesCache: GasStation[] = [];
   
   // Modales
   mostrarModalComparacion = signal(false);
@@ -95,6 +101,11 @@ export class DashboardComponent implements OnInit {
   
   precioMedio = computed(() => 
     this.resultadoBusqueda()?.precioMedio || 0
+  );
+
+  // Favoritos
+  estacionesFavoritas = computed(() => 
+    this.favoritosService.favoritos().map(f => f.estacion)
   );
 
   // ============================================================================
@@ -165,6 +176,7 @@ export class DashboardComponent implements OnInit {
     // Cargar todas las estaciones al inicio
     this.gasStationService.getEstacionesGeneral().subscribe({
       next: (estaciones) => {
+        this.estacionesCache = estaciones;
         this.todasEstaciones.set(estaciones);
         this.extraerMarcasDisponibles(estaciones);
         this.aplicarFiltros();
@@ -234,13 +246,35 @@ export class DashboardComponent implements OnInit {
   buscar(): void {
     const valores = this.searchForm.value;
     
-    // Si se seleccionó un municipio específico, cargar solo ese
+    // 1. Prioridad: Código Postal (Búsqueda local sobre el caché)
+    if (valores.codigoPostal && valores.codigoPostal.length === 5) {
+      this.todasEstaciones.set(this.estacionesCache);
+      this.aplicarFiltros();
+      return;
+    }
+
+    // 2. Si se seleccionó un municipio específico, cargar desde API (más preciso/ligero si no hay caché completo)
     if (valores.municipioId) {
       this.buscarPorMunicipio(valores.municipioId);
-    } else if (valores.usarGPS && this.ubicacionUsuario()) {
-      this.aplicarFiltros();
-    } else {
-      // Usar todas las estaciones y aplicar filtros
+    } 
+    // 3. Si se seleccionó "Todos los municipios" (municipioId vacío pero provinciaId presente)
+    else if (valores.provinciaId) {
+      const provinciaName = this.provincias().find(p => p.IDPovincia === valores.provinciaId)?.Provincia;
+      if (provinciaName) {
+        const estacionesProvincia = this.estacionesCache.filter(e => 
+          e.provincia.toUpperCase() === provinciaName.toUpperCase()
+        );
+        this.todasEstaciones.set(estacionesProvincia);
+        this.aplicarFiltros();
+      } else {
+        // Si no encontramos el nombre, usamos todas
+        this.todasEstaciones.set(this.estacionesCache);
+        this.aplicarFiltros();
+      }
+    }
+    // 4. GPS o General
+    else {
+      this.todasEstaciones.set(this.estacionesCache);
       this.aplicarFiltros();
     }
   }
@@ -268,6 +302,9 @@ export class DashboardComponent implements OnInit {
     const valores = this.searchForm.value;
     
     const filtros: FiltrosBusqueda = {
+      codigoPostal: valores.codigoPostal || undefined,
+      provinciaId: valores.provinciaId || undefined,
+      municipioId: valores.municipioId || undefined,
       combustible: valores.combustible,
       marcas: valores.marcas || [],
       soloAbiertas: valores.soloAbiertas,
@@ -329,8 +366,24 @@ export class DashboardComponent implements OnInit {
    * @param estaciones Array de estaciones
    */
   private extraerMarcasDisponibles(estaciones: GasStation[]): void {
-    const marcas = new Set(estaciones.map(e => e.marca));
-    this.marcasDisponibles.set(Array.from(marcas).sort());
+    const marcasSet = new Set(estaciones.map(e => e.marca.toUpperCase()));
+    const marcasArray = Array.from(marcasSet);
+    
+    const marcasOrdenadas = marcasArray.sort((a, b) => {
+      const indexA = MARCAS_PRINCIPALES.findIndex(m => a.includes(m));
+      const indexB = MARCAS_PRINCIPALES.findIndex(m => b.includes(m));
+      
+      // Si ambas son principales, respetar el orden de MARCAS_PRINCIPALES
+      if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+      // Si solo A es principal, va primero
+      if (indexA !== -1) return -1;
+      // Si solo B es principal, va primero
+      if (indexB !== -1) return 1;
+      // Si ninguna es principal, orden alfabético
+      return a.localeCompare(b);
+    });
+
+    this.marcasDisponibles.set(marcasOrdenadas);
   }
 
   // ============================================================================
@@ -341,8 +394,24 @@ export class DashboardComponent implements OnInit {
    * Cambia la vista activa (mapa, lista, gráficas)
    * @param vista Vista a activar
    */
-  cambiarVista(vista: 'mapa' | 'lista' | 'graficas'): void {
+  cambiarVista(vista: 'mapa' | 'lista' | 'graficas' | 'favoritos'): void {
     this.vistaActiva.set(vista);
+    
+    if (vista === 'favoritos') {
+      // Al cambiar a favoritos, forzamos un resultado temporal
+      const favs = this.estacionesFavoritas();
+      this.resultadoBusqueda.set({
+        estaciones: favs,
+        totalEncontradas: favs.length,
+        precioMedio: favs.length > 0 ? favs.reduce((acc, curr) => acc + (this.obtenerPrecioEstacion(curr, this.searchForm.value.combustible) || 0), 0) / favs.length : 0,
+        precioMinimo: 0,
+        precioMaximo: 0,
+        timestamp: new Date()
+      });
+    } else {
+      // Re-aplicar filtros para volver a la búsqueda original
+      this.aplicarFiltros();
+    }
   }
 
   /**

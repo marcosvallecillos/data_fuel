@@ -11,7 +11,8 @@ import {
   TipoCombustible,
   Coordenadas,
   FiltrosBusqueda,
-  ResultadoBusqueda
+  ResultadoBusqueda,
+  EvolucionPrecio
 } from '../models/gas-station.models';
 
 /**
@@ -276,6 +277,18 @@ export class GasStationService {
       );
     }
 
+    // 2. Filtrar por Código Postal
+    if (filtros.codigoPostal && filtros.codigoPostal.length === 5) {
+      resultado = resultado.filter(e => e.codigoPostal === filtros.codigoPostal);
+    }
+
+    // 3. Filtrar por Provincia (si el filtro viene por nombre o tenemos que buscarlo)
+    if (filtros.provinciaId && !filtros.municipioId) {
+       // Si solo hay provinciaId, filtramos las estaciones que pertenecen a esa provincia
+       // El servicio maneja nombres en GasStation, así que comparamos por nombre
+       // Nota: Esto asume que el Dashboard nos pasa el nombre de la provincia o que GasStationService lo mapea
+    }
+
     // 2. Filtrar por estado de apertura
     if (filtros.soloAbiertas) {
       resultado = resultado.filter(e => e.estaAbierta === true);
@@ -491,6 +504,64 @@ export class GasStationService {
   // ============================================================================
   // MANEJO DE ERRORES
   // ============================================================================
+
+  /**
+   * Obtiene el histórico de precios para una estación o zona
+   * Simulamos datos históricos ya que la API del ministerio solo da tiempo real
+   */
+  getHistoricoPrecios(municipio?: string, combustible: TipoCombustible = TipoCombustible.GASOLINA_95): Observable<EvolucionPrecio[]> {
+    const hoy = new Date();
+    const datos: EvolucionPrecio[] = [];
+    
+    // Precio base inicial (simulado)
+    let precioBase = 1.45;
+    
+    // Generar 30 días de datos
+    for (let i = 30; i >= 0; i--) {
+      const fecha = new Date();
+      fecha.setDate(hoy.getDate() - i);
+      
+      // Simular tendencia de subida/bajada aleatoria con sesgo alcista
+      precioBase += (Math.random() - 0.4) * 0.02;
+      
+      datos.push({
+        fecha,
+        precioNacional: precioBase,
+        precioEstacion: precioBase + (Math.random() - 0.5) * 0.05,
+        combustible
+      });
+    }
+    
+    return of(datos).pipe(debounceTime(300));
+  }
+
+  /**
+   * Obtiene el histórico mensual de precios para una zona
+   * Simula la escalada de precios de los últimos 12 meses
+   */
+  getHistoricoMensual(provinciaId?: string): Observable<EvolucionPrecio[]> {
+    const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const hoy = new Date();
+    const datos: EvolucionPrecio[] = [];
+    
+    let precioBase = 1.35 + (Math.random() * 0.2); // Empezar hace un año
+    
+    for (let i = 11; i >= 0; i--) {
+      const fecha = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+      
+      // Simular escalada constante (inflación/mercado)
+      precioBase += 0.015 + (Math.random() * 0.03); 
+      
+      datos.push({
+        fecha,
+        precioNacional: precioBase,
+        precioEstacion: precioBase + (Math.random() - 0.5) * 0.08,
+        combustible: TipoCombustible.GASOLINA_95
+      });
+    }
+    
+    return of(datos).pipe(debounceTime(300));
+  }
 
   /**
    * Maneja errores HTTP de forma centralizada

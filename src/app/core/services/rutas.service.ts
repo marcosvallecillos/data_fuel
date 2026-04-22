@@ -64,8 +64,8 @@ export class RutasService {
   ): Observable<InformacionRuta | null> {
     // Validar API key
     if (this.API_KEY === 'TU_API_KEY_AQUI') {
-      console.error('❌ API key de OpenRouteService no configurada');
-      return of(null);
+      console.warn('⚠️ API key de ORS no configurada. Usando ruta simple (línea recta).');
+      return of(this.generarRutaSimple(origen, destino, opciones));
     }
 
     const profile = this.mapearModoTransporte(opciones.modoTransporte);
@@ -110,8 +110,27 @@ export class RutasService {
     pais: string = 'ES'
   ): Observable<ResultadoDireccion[]> {
     if (this.API_KEY === 'TU_API_KEY_AQUI') {
-      console.error('❌ API key de OpenRouteService no configurada');
-      return of([]);
+      // Fallback a Nominatim (OpenStreetMap) si no hay API key de ORS
+      const nominatimUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(direccion)}&countrycodes=${pais.toLowerCase()}&addressdetails=1&limit=5`;
+      
+      return this.http.get<any[]>(nominatimUrl).pipe(
+        map(results => results.map(res => ({
+          direccion: res.display_name,
+          coordenadas: {
+            latitud: parseFloat(res.lat),
+            longitud: parseFloat(res.lon)
+          },
+          confianza: 1,
+          detalles: {
+            municipio: res.address.city || res.address.town || res.address.village,
+            provincia: res.address.state || res.address.county
+          }
+        }))),
+        catchError(error => {
+          console.error('❌ Error en geocoding (Nominatim):', error);
+          return of(this.generarMockDireccion(direccion));
+        })
+      );
     }
 
     const url = `${this.ENDPOINTS.geocode}?api_key=${this.API_KEY}&text=${encodeURIComponent(direccion)}&boundary.country=${pais}&size=5`;
@@ -433,5 +452,38 @@ export class RutasService {
       'cycling': '🚴'
     };
     return iconos[modo];
+  }
+
+  /**
+   * Genera resultados de geocoding ficticios para pruebas
+   */
+  private generarMockDireccion(texto: string): ResultadoDireccion[] {
+    const ciudadesMock = [
+      { nombre: 'Madrid', lat: 40.4168, lon: -3.7038, provincia: 'Madrid' },
+      { nombre: 'Valencia', lat: 39.4699, lon: -0.3763, provincia: 'Valencia' },
+      { nombre: 'Barcelona', lat: 41.3851, lon: 2.1734, provincia: 'Barcelona' },
+      { nombre: 'Silla', lat: 39.3621, lon: -0.4121, provincia: 'Valencia' },
+      { nombre: 'Torrent', lat: 39.4363, lon: -0.4655, provincia: 'Valencia' }
+    ];
+
+    // Filtrar por texto
+    const ciudadEncontrada = ciudadesMock.find(c => 
+      c.nombre.toLowerCase().includes(texto.toLowerCase())
+    );
+
+    if (!ciudadEncontrada) return [];
+
+    return [{
+      direccion: `${texto}, ${ciudadEncontrada.provincia}`,
+      coordenadas: {
+        latitud: ciudadEncontrada.lat + (Math.random() - 0.5) * 0.01,
+        longitud: ciudadEncontrada.lon + (Math.random() - 0.5) * 0.01
+      },
+      confianza: 0.9,
+      detalles: {
+        municipio: ciudadEncontrada.nombre,
+        provincia: ciudadEncontrada.provincia
+      }
+    }];
   }
 }

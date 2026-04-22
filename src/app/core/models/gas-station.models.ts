@@ -289,10 +289,15 @@ export const MARCAS_PRINCIPALES = [
   'GALP',
   'PETRONOR',
   'AVIA',
-  'CARREFOUR',
   'BALLENOIL',
   'PLENOIL',
-  'ALCAMPO'
+  'CARREFOUR',
+  'ALCAMPO',
+  'COOP',
+  'COOPERATIVA',
+  'E.S. COOPERATIVA',
+  'VALCARCE',
+  'PETROPRIX'
 ] as const;
 
 // ============================================================================

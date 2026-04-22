@@ -109,6 +109,16 @@
   min-width: 100px;
 }
 
+.stat-card.active-view {
+  background: var(--color-primary);
+  color: white;
+}
+
+.stat-card.active-view .stat-label,
+.stat-card.active-view .stat-value {
+  color: white;
+}
+
 .stat-label {
   font-size: 12px;
   color: var(--color-text-secondary);
