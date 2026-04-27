@@ -12,7 +12,8 @@ import {
   Coordenadas,
   FiltrosBusqueda,
   ResultadoBusqueda,
-  EvolucionPrecio
+  EvolucionPrecio,
+  ReviewCliente
 } from '../models/gas-station.models';
 
 /**
@@ -27,6 +28,7 @@ import {
 })
 export class GasStationService {
   private readonly http = inject(HttpClient);
+  private readonly REVIEWS_STORAGE_KEY = 'datafuel_reviews_por_estacion';
   
   // ============================================================================
   // CONFIGURACIÓN DE LA API
@@ -231,19 +233,20 @@ export class GasStationService {
     }
     
     // Intentar extraer horas de apertura/cierre
-    const horaActual = new Date().getHours();
+    const ahora = new Date();
+    const minutosActuales = ahora.getHours() * 60 + ahora.getMinutes();
     const matchHorario = horario.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
     
     if (matchHorario) {
-      const [ horaApertura, horaCierre] = matchHorario;
-      const apertura = parseInt(horaApertura);
-      const cierre = parseInt(horaCierre);
+      const [, horaApertura, minutoApertura, horaCierre, minutoCierre] = matchHorario;
+      const apertura = parseInt(horaApertura, 10) * 60 + parseInt(minutoApertura, 10);
+      const cierre = parseInt(horaCierre, 10) * 60 + parseInt(minutoCierre, 10);
       
       if (cierre < apertura) {
         // Horario que cruza medianoche
-        return horaActual >= apertura || horaActual < cierre;
+        return minutosActuales >= apertura || minutosActuales < cierre;
       } else {
-        return horaActual >= apertura && horaActual < cierre;
+        return minutosActuales >= apertura && minutosActuales < cierre;
       }
     }
     
@@ -561,6 +564,55 @@ export class GasStationService {
     }
     
     return of(datos).pipe(debounceTime(300));
+  }
+
+  /**
+   * Obtiene reviews reales de usuarios de la app para una estación.
+   * Persisten en localStorage (gratis y sin tarjeta).
+   */
+  getReviewsPorEstacion(estacionId: string): Observable<ReviewCliente[]> {
+    const reviewsPorEstacion = this.obtenerReviewsDesdeStorage();
+    const reviews = (reviewsPorEstacion[estacionId] || []).map(review => ({
+      ...review,
+      fecha: new Date(review.fecha)
+    }));
+    return of(reviews).pipe(debounceTime(150));
+  }
+
+  /**
+   * Agrega una review de usuario y la guarda localmente.
+   */
+  agregarReviewEstacion(
+    estacionId: string,
+    autor: string,
+    puntuacion: number,
+    comentario: string
+  ): Observable<ReviewCliente> {
+    const review: ReviewCliente = {
+      id: `${estacionId}-${Date.now()}`,
+      estacionId,
+      autor: autor.trim() || 'Anonimo',
+      puntuacion: Math.max(1, Math.min(5, Math.round(puntuacion))),
+      comentario: comentario.trim(),
+      fecha: new Date()
+    };
+
+    const reviewsPorEstacion = this.obtenerReviewsDesdeStorage();
+    const actuales = reviewsPorEstacion[estacionId] || [];
+    reviewsPorEstacion[estacionId] = [review, ...actuales];
+    localStorage.setItem(this.REVIEWS_STORAGE_KEY, JSON.stringify(reviewsPorEstacion));
+
+    return of(review);
+  }
+
+  private obtenerReviewsDesdeStorage(): Record<string, ReviewCliente[]> {
+    try {
+      const raw = localStorage.getItem(this.REVIEWS_STORAGE_KEY);
+      if (!raw) return {};
+      return JSON.parse(raw) as Record<string, ReviewCliente[]>;
+    } catch {
+      return {};
+    }
   }
 
   /**

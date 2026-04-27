@@ -243,9 +243,11 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges
   @Input() combustibleSeleccionado: TipoCombustible = TipoCombustible.GASOLINA_95;
   @Input() centroInicial?: Coordenadas;
   @Input() zoomInicial = 13;
+  @Input() modoSeleccionPunto = false;
   
   @Output() estacionSeleccionada = new EventEmitter<GasStation>();
   @Output() favoritoAgregado = new EventEmitter<GasStation>();
+  @Output() puntoSeleccionado = new EventEmitter<Coordenadas>();
   
   // ============================================================================
   // PROPIEDADES DEL COMPONENTE
@@ -255,6 +257,7 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges
   private markers: L.Marker[] = [];
   private userLocationMarker?: L.Marker;
   private userLocationCircle?: L.Circle;
+  private puntoRecomendacionMarker?: L.Marker;
   
   // Signal para trackear estaciones cargadas
   estacionesCargadas = signal(0);
@@ -285,6 +288,15 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges
   ngOnChanges(changes: SimpleChanges): void {
     if (this.map && (changes['estaciones'] || changes['combustibleSeleccionado'])) {
       this.cargarEstaciones();
+    }
+
+    if (this.map && changes['modoSeleccionPunto']) {
+      const mapElement = this.map.getContainer();
+      if (this.modoSeleccionPunto) {
+        mapElement.style.cursor = 'crosshair';
+      } else {
+        mapElement.style.cursor = '';
+      }
     }
   }
 
@@ -318,6 +330,18 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges
       maxZoom: 19,
       minZoom: 6
     }).addTo(this.map);
+
+    this.map.on('click', (event: L.LeafletMouseEvent) => {
+      if (!this.modoSeleccionPunto) return;
+
+      const coords: Coordenadas = {
+        latitud: event.latlng.lat,
+        longitud: event.latlng.lng
+      };
+
+      this.marcarPuntoRecomendacion(coords);
+      this.puntoSeleccionado.emit(coords);
+    });
 
     console.log('✅ Mapa inicializado correctamente');
   }
@@ -586,6 +610,17 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges
     ).addTo(this.map);
 
     this.userLocationMarker.bindPopup('📍 Tu ubicación');
+  }
+
+  private marcarPuntoRecomendacion(coords: Coordenadas): void {
+    if (!this.map) return;
+
+    if (this.puntoRecomendacionMarker) {
+      this.puntoRecomendacionMarker.remove();
+    }
+
+    this.puntoRecomendacionMarker = L.marker([coords.latitud, coords.longitud]).addTo(this.map);
+    this.puntoRecomendacionMarker.bindPopup('📌 Punto para recomendación IA').openPopup();
   }
 
   /**

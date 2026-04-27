@@ -1,0 +1,77 @@
+<div class="barber-page">
+  <header class="top-nav">
+    <div class="brand">DF</div>
+    <nav class="menu">
+      <a href="#">Inicio</a>
+      <a href="#">Gasolineras</a>
+      <a href="#">Mapa</a>
+      <a href="#">Comparador</a>
+      <a href="#">Sugerencias IA</a>
+    </nav>
+    <button class="login-btn">Mi cuenta</button>
+  </header>
+
+  <section class="hero-overlay">
+    <div class="hero-content">
+      <h1>Encuentra la gasolinera ideal con IA</h1>
+      <p>
+        Pide sugerencias como "la gasolinera mas barata cerca de mi" y recibe respuesta al instante.
+      </p>
+      <button class="cta-btn" (click)="toggleChat()">Abrir asistente IA</button>
+    </div>
+  </section>
+
+  <div class="chat-fab" (click)="toggleChat()">
+    @if (!isOpen) {
+      <span>💬</span>
+    } @else {
+      <span>✕</span>
+    }
+  </div>
+
+  <div class="chat-window" [class.open]="isOpen">
+    <div class="chat-header">
+      <div class="chat-header-info">
+        <div class="chat-avatar">⛽</div>
+        <div>
+          <div class="chat-title">Data Fuel IA</div>
+          <div class="chat-subtitle">{{ getText('Asistente de gasolineras', 'Gas station assistant') }}</div>
+        </div>
+      </div>
+      <button class="chat-close" (click)="toggleChat()">✕</button>
+    </div>
+
+    <div class="chat-messages" #messagesContainer>
+      @for (msg of messages; track msg) {
+        <div
+          class="message"
+          [class.user]="msg.role === 'user'"
+          [class.assistant]="msg.role === 'assistant'"
+        >
+          <div class="message-bubble">{{ msg.content }}</div>
+        </div>
+      }
+
+      @if (isLoading) {
+        <div class="message assistant">
+          <div class="message-bubble typing">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
+      }
+    </div>
+
+    <div class="chat-input-area">
+      <textarea
+        [(ngModel)]="userInput"
+        (keydown)="onKeyPress($event)"
+        [placeholder]="getText('Escribe un mensaje...', 'Type a message...')"
+        rows="1"
+        [disabled]="isLoading"
+      ></textarea>
+      <button (click)="sendMessage()" [disabled]="isLoading || !userInput.trim()">
+        ➤
+      </button>
+    </div>
+  </div>
+</div>

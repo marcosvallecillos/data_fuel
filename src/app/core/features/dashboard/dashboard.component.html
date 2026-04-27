@@ -40,6 +40,14 @@
             ⚖️ Comparar ({{ totalComparaciones() }})
           </button>
         }
+        <button
+          class="btn-ia"
+          (click)="abrirSugerenciaIA()"
+          [disabled]="modoSeleccionPunto()">
+          {{ modoSeleccionPunto() ? '📌 Selecciona punto en mapa...' : '🤖 Crear recomendacion' }}
+        </button>
+
+      
         
         @if (cargando | async) {
           <div class="loading-indicator">
@@ -247,6 +255,8 @@
               [estaciones]="estacionesFiltradas()"
               [combustibleSeleccionado]="searchForm.value.combustible"
               [centroInicial]="ubicacionUsuario()"
+              [modoSeleccionPunto]="modoSeleccionPunto()"
+              (puntoSeleccionado)="onPuntoMapaSeleccionado($event)"
               (estacionSeleccionada)="onEstacionSeleccionada($event)">
             </app-map>
           </div>
@@ -319,6 +329,11 @@
                         (click)="crearAlerta(estacion)">
                         🔔 Alerta
                       </button>
+                      <button
+                        class="btn btn-small btn-secondary"
+                        (click)="seleccionarEstacion(estacion)">
+                        💬 Reviews
+                      </button>
                     </div>
                   </div>
                 }
@@ -348,7 +363,7 @@
         <h3>Detalles de la estación</h3>
         <button 
           class="btn-close"
-          (click)="estacionSeleccionada.set(null)">
+          (click)="cerrarPanelDetalles()">
           ✕
         </button>
       </div>
@@ -389,6 +404,41 @@
               <p>{{ estacion.horario }}</p>
             </div>
           }
+
+          <div class="detalle-section">
+            <h4>💬 Reviews de clientes</h4>
+            <button class="btn btn-secondary btn-block" (click)="publicarReview(estacion)">
+              ✍️ Escribir review
+            </button>
+            @if (cargandoReviews()) {
+              <p class="reviews-loading">Cargando reviews...</p>
+            } @else if (errorReviews()) {
+              <p class="reviews-empty">{{ errorReviews() }}</p>
+            } @else if (reviewsEstacionSeleccionada().length === 0) {
+              <p class="reviews-empty">Todavia no hay reviews para esta estacion.</p>
+            } @else {
+              <div class="reviews-lista">
+                @for (review of reviewsEstacionSeleccionada().slice(0, reviewsVisibles()); track review.id) {
+                  <article class="review-item">
+                    <div class="review-header">
+                      <strong>{{ review.autor }}</strong>
+                      <span class="review-fecha">{{ formatearFechaReview(review.fecha) }}</span>
+                    </div>
+                    <p class="review-rating">{{ obtenerEstrellas(review.puntuacion) }} ({{ review.puntuacion }}/5)</p>
+                    <p class="review-comentario">{{ review.comentario }}</p>
+                  </article>
+                }
+              </div>
+
+              <div class="reviews-actions">
+                @if (hayMasReviewsLocales()) {
+                  <button class="btn btn-secondary btn-block" (click)="verMasReviews()">
+                    Ver mas reviews
+                  </button>
+                }
+              </div>
+            }
+          </div>
           
           <div class="detalle-actions">
             <button 
@@ -433,4 +483,62 @@
     [estacion]="estacionParaRuta()!"
     (rutaCalculadaEvent)="onRutaCalculada($event)">
   </app-rutas-modal>
+}
+
+<app-chatbot-barber></app-chatbot-barber>
+
+@if (mostrarModalRecomendacion()) {
+  <div class="ia-modal-overlay" (click)="cerrarModalRecomendacion()">
+    <div class="ia-modal" (click)="$event.stopPropagation()">
+      <div class="ia-modal-header">
+        <h3>🤖 Recomendacion IA</h3>
+        <button class="btn-close" (click)="cerrarModalRecomendacion()">✕</button>
+      </div>
+      <div class="ia-modal-body">
+        <div class="ia-config">
+          <div class="ia-config-item">
+            <label>Litros estimados</label>
+            <input
+              type="number"
+              [value]="litrosEstimados()"
+              min="5"
+              max="120"
+              step="1"
+              (input)="litrosEstimados.set($any($event.target).valueAsNumber)">
+          </div>
+          <div class="ia-config-item">
+            <label>Consumo (L/km)</label>
+            <input
+              type="number"
+              [value]="consumoLKm()"
+              min="0.02"
+              max="0.25"
+              step="0.005"
+              (input)="consumoLKm.set($any($event.target).valueAsNumber)">
+            <small class="ia-hint">Ej: 6L/100km = 0.06 L/km</small>
+          </div>
+          <div class="ia-config-actions">
+            <button class="btn btn-primary" (click)="recalcularRecomendacion()">
+              Recalcular
+            </button>
+          </div>
+        </div>
+
+        <p class="ia-modal-text">{{ recomendacionIaTexto() }}</p>
+
+        <div class="ia-modal-divider"></div>
+        <h4 class="ia-modal-subtitle">⏱️ Mejor momento para repostar</h4>
+        @if (cargandoMejorMomento()) {
+          <p class="ia-modal-text">Calculando mejor momento...</p>
+        } @else if (mejorMomentoTexto()) {
+          <p class="ia-modal-text">{{ mejorMomentoTexto() }}</p>
+        } @else {
+          <p class="ia-modal-text">Selecciona una chincheta para ver la recomendacion.</p>
+        }
+      </div>
+      <div class="ia-modal-actions">
+        <button class="btn btn-secondary" (click)="cerrarModalRecomendacion()">Cerrar</button>
+      </div>
+    </div>
+  </div>
 }

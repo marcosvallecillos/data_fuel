@@ -114,6 +114,19 @@ export interface GasStation {
 }
 
 /**
+ * Review/opinion de cliente sobre una estación
+ */
+export interface ReviewCliente {
+  id: string;
+  estacionId: string;
+  autor: string;
+  puntuacion: number;                        // 1-5
+  comentario: string;
+  fecha: Date;
+}
+
+
+/**
  * Coordenadas geográficas
  */
 export interface Coordenadas {
