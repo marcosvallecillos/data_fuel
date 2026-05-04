@@ -45,3 +45,4 @@ Thumbs.db
 
 # Secrets
 .env
+src/assets/data/config.json
