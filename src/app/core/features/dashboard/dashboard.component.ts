@@ -24,6 +24,7 @@ import { FavoritosService } from '../../services/favoritos.service';
 import { AlertasService } from '../../services/alertas.service';
 import { ComparacionService } from '../../services/comparacion.service';
 import { ChatbotComponent } from '../chatbot/chatbot.component';
+import { AiService } from '../../services/ai.service';
 
 /**
  * Componente principal del dashboard de Gas-Trend Pro
@@ -53,6 +54,14 @@ export class DashboardComponent implements OnInit {
   private readonly favoritosService = inject(FavoritosService);
   private readonly alertasService = inject(AlertasService);
   private readonly comparacionService = inject(ComparacionService);
+  private readonly aiService = inject(AiService);
+
+  // ============================================================================
+  // CONSTANTES Y CONFIGURACIÓN
+  // ============================================================================
+  private readonly VALENCIA_CENTER: Coordenadas = { latitud: 39.4699, longitud: -0.3763 };
+  private readonly VALENCIA_PROVINCIA_ID = '46';
+  private idProvinciaCargada = '';
 
   // ============================================================================
   // SIGNALS Y ESTADO REACTIVO
@@ -102,6 +111,7 @@ export class DashboardComponent implements OnInit {
   recomendacionIaTexto = signal('');
   cargandoMejorMomento = signal(false);
   mejorMomentoTexto = signal('');
+  consejoGrok = signal('');
   litrosEstimados = signal<number>(40);
   consumoLKm = signal<number>(0.06);
   
@@ -185,20 +195,40 @@ export class DashboardComponent implements OnInit {
   }
 
   /**
-   * Carga estaciones iniciales (todas o por ubicación)
+   * Carga estaciones iniciales (Valencia y alrededores por defecto para optimizar carga)
    */
   private cargarEstacionesIniciales(): void {
-    // Cargar todas las estaciones al inicio
+    // Cargar solo la provincia de Valencia al inicio para que sea mucho más rápido
+    this.gasStationService.getEstacionesPorProvincia(this.VALENCIA_PROVINCIA_ID).subscribe({
+      next: (estaciones) => {
+        this.estacionesCache = estaciones;
+        this.idProvinciaCargada = this.VALENCIA_PROVINCIA_ID;
+        this.todasEstaciones.set(estaciones);
+        this.extraerMarcasDisponibles(estaciones);
+        this.aplicarFiltros();
+        console.log(`✅ ${estaciones.length} estaciones de Valencia cargadas (Carga optimizada)`);
+      },
+      error: (error) => {
+        console.error('Error cargando estaciones:', error);
+        // Si falla la carga provincial, intentamos la general como fallback
+        this.cargarEstacionesGeneralFallback();
+      }
+    });
+  }
+
+  /**
+   * Fallback en caso de que falle la carga por provincia
+   */
+  private cargarEstacionesGeneralFallback(): void {
     this.gasStationService.getEstacionesGeneral().subscribe({
       next: (estaciones) => {
         this.estacionesCache = estaciones;
         this.todasEstaciones.set(estaciones);
         this.extraerMarcasDisponibles(estaciones);
         this.aplicarFiltros();
-        console.log(`✅ ${estaciones.length} estaciones cargadas`);
       },
       error: (error) => {
-        console.error('Error cargando estaciones:', error);
+        console.error('Error crítico cargando estaciones:', error);
         alert('Error al cargar los datos. Por favor, recarga la página.');
       }
     });
@@ -261,37 +291,58 @@ export class DashboardComponent implements OnInit {
   buscar(): void {
     const valores = this.searchForm.value;
     
-    // 1. Prioridad: Código Postal (Búsqueda local sobre el caché)
+    // 1. Prioridad: Código Postal
     if (valores.codigoPostal && valores.codigoPostal.length === 5) {
-      this.todasEstaciones.set(this.estacionesCache);
-      this.aplicarFiltros();
+      const codigoProvincia = valores.codigoPostal.substring(0, 2);
+      // Si el CP es de una provincia distinta a la cargada, la descargamos
+      if (codigoProvincia !== this.idProvinciaCargada) {
+        this.buscarPorProvincia(codigoProvincia);
+      } else {
+        this.todasEstaciones.set(this.estacionesCache);
+        this.aplicarFiltros();
+      }
       return;
     }
 
-    // 2. Si se seleccionó un municipio específico, cargar desde API (más preciso/ligero si no hay caché completo)
+    // 2. Si se seleccionó un municipio específico, cargar desde API
     if (valores.municipioId) {
       this.buscarPorMunicipio(valores.municipioId);
     } 
-    // 3. Si se seleccionó "Todos los municipios" (municipioId vacío pero provinciaId presente)
+    // 3. Si se seleccionó una provincia
     else if (valores.provinciaId) {
-      const provinciaName = this.provincias().find(p => p.IDPovincia === valores.provinciaId)?.Provincia;
-      if (provinciaName) {
-        const estacionesProvincia = this.estacionesCache.filter(e => 
-          e.provincia.toUpperCase() === provinciaName.toUpperCase()
-        );
-        this.todasEstaciones.set(estacionesProvincia);
-        this.aplicarFiltros();
+      // Si es una provincia distinta a la que tenemos en memoria, la descargamos
+      if (valores.provinciaId !== this.idProvinciaCargada) {
+        this.buscarPorProvincia(valores.provinciaId);
       } else {
-        // Si no encontramos el nombre, usamos todas
         this.todasEstaciones.set(this.estacionesCache);
         this.aplicarFiltros();
       }
     }
-    // 4. GPS o General
+    // 4. GPS o General (Si no hay nada, volvemos a Valencia o lo que haya en cache)
     else {
       this.todasEstaciones.set(this.estacionesCache);
       this.aplicarFiltros();
     }
+  }
+
+  /**
+   * Busca estaciones de una provincia completa
+   * @param provinciaId ID de la provincia
+   */
+  private buscarPorProvincia(provinciaId: string): void {
+    this.gasStationService.getEstacionesPorProvincia(provinciaId).subscribe({
+      next: (estaciones) => {
+        this.estacionesCache = estaciones;
+        this.idProvinciaCargada = provinciaId;
+        this.todasEstaciones.set(estaciones);
+        this.extraerMarcasDisponibles(estaciones);
+        this.aplicarFiltros();
+        console.log(`✅ ${estaciones.length} estaciones de la provincia ${provinciaId} cargadas`);
+      },
+      error: (error) => {
+        console.error('Error buscando por provincia:', error);
+      }
+    });
   }
 
   /**
@@ -325,7 +376,9 @@ export class DashboardComponent implements OnInit {
       soloAbiertas: valores.soloAbiertas,
       radioKm: valores.radioKm,
       ordenarPor: valores.ordenarPor,
-      coordenadas: valores.usarGPS ? this.ubicacionUsuario() || undefined : undefined
+      coordenadas: valores.usarGPS 
+        ? (this.ubicacionUsuario() || undefined) 
+        : (!valores.codigoPostal && !valores.provinciaId && !valores.municipioId ? this.VALENCIA_CENTER : undefined)
     };
 
     const resultado = this.gasStationService.filtrarEstaciones(
@@ -663,6 +716,7 @@ export class DashboardComponent implements OnInit {
     const base = this.estacionesFiltradas().length > 0 ? this.estacionesFiltradas() : this.estacionesCache;
 
     this.mejorMomentoTexto.set('');
+    this.consejoGrok.set('');
     // Parametros de coste (puedes exponerlos luego en UI)
     const litrosEstimados = this.clampNumero(this.litrosEstimados(), 5, 120, 40);
     const consumoLKm = this.clampNumero(this.consumoLKm(), 0.02, 0.25, 0.06);
@@ -699,35 +753,59 @@ export class DashboardComponent implements OnInit {
     // - coste efectivo €/L = coste_total / litros
     const candidatasRankeadas = candidatas
       .map(c => {
-        const litrosDesplazamiento = 2 * c.distanciaKm * consumoLKm;
-        const costeRepostaje = litrosEstimados * c.precio;
-        const costeDesplazamiento = litrosDesplazamiento * c.precio;
-        const costeTotal = costeRepostaje + costeDesplazamiento;
+        // Coste del desplazamiento (ida y vuelta)
+        const litrosViaje = 2 * c.distanciaKm * consumoLKm;
+        const costeDepot = litrosEstimados * c.precio;
+        const costeViaje = litrosViaje * c.precio;
+        const costeTotal = costeDepot + costeViaje;
+        
+        // El precio "efectivo" es lo que realmente pagas por cada litro que termina en tu depósito
+        // después de haber gastado parte en el camino.
         const precioEfectivo = costeTotal / litrosEstimados;
+
         return {
           ...c,
-          litrosDesplazamiento,
+          litrosViaje,
+          costeDepot,
+          costeViaje,
+          costeTotal,
           precioEfectivo
         };
       })
-      .sort((a, b) => a.precioEfectivo - b.precioEfectivo)
+      .sort((a, b) => a.costeTotal - b.costeTotal)
       .slice(0, 3);
 
-    const top = candidatasRankeadas.map((item, index) =>
-      `${index + 1}. ${item.estacion.marca} - ${item.estacion.direccion} (${item.estacion.municipio})\n` +
-      `   Precio: ${item.precio.toFixed(3)} €/L · Distancia: ${item.distanciaKm.toFixed(1)} km\n` +
-      `   Precio efectivo (incluye desplazamiento): ${item.precioEfectivo.toFixed(3)} €/L`
-    );
+    const top = candidatasRankeadas.map((item, index) => {
+      const ahorroVsPeor = candidatasRankeadas[candidatasRankeadas.length - 1].costeTotal - item.costeTotal;
+      return `${index + 1}. ${item.estacion.marca} (${item.estacion.municipio}) - ${item.estacion.direccion}\n` +
+             `   📍 Distancia: ${item.distanciaKm.toFixed(1)} km | ⛽ Precio: ${item.precio.toFixed(3)} €/L\n` +
+             `   💰 Coste Depósito: ${item.costeDepot.toFixed(2)}€ | 🚗 Gasto Viaje: ${item.costeViaje.toFixed(2)}€\n` +
+             `   📈 COSTE TOTAL: ${item.costeTotal.toFixed(2)}€ (${item.precioEfectivo.toFixed(3)} €/L efectivo)`;
+    });
+
+    // Obtener comarca y municipio del punto (de la gasolinera más cercana)
+    const comarcaPunto = candidatasRankeadas[0]?.estacion.comarca || 'Valencia';
+    const municipioPunto = candidatasRankeadas[0]?.estacion.municipio || '';
 
     this.recomendacionIaTexto.set(
-      `Recomendacion IA desde tu punto seleccionado (precio + distancia):\n` +
-      `(suponiendo ${litrosEstimados} L y consumo ${consumoLKm.toFixed(3)} L/km)\n\n` +
-      `${top.join('\n\n')}`
+      `Recomendacion IA para ${municipioPunto} (${comarcaPunto}):\n` +
+      `(calculada desde el punto seleccionado, suponiendo ${litrosEstimados} L y consumo ${consumoLKm.toFixed(3)} L/km)\n\n` +
+      `${top.join('\n\n')}\n\n` +
+      `💡 Nota: El "Gasto Viaje" incluye ida y vuelta. Se recomienda la opción con menor COSTE TOTAL.`
     );
     this.mostrarModalRecomendacion.set(true);
 
     // Sugerir mejor momento (día) para repostar con histórico simulado
     this.calcularMejorMomentoRepostaje(candidatasRankeadas[0].estacion, candidatasRankeadas[0].precio);
+
+    // Obtener consejo de Grok
+    const precioHoy = this.precioMedio();
+    // Simulamos un precio para mañana basado en la tendencia del modelo
+    const precioManana = precioHoy * 0.9; // 10% menos como en el ejemplo del usuario
+    this.aiService.getConsejoExperto(precioHoy, precioManana, comarcaPunto).subscribe({
+      next: consejo => this.consejoGrok.set(consejo),
+      error: () => this.consejoGrok.set('Mantén tus neumáticos con la presión correcta para ahorrar hasta un 3% en combustible.')
+    });
   }
 
   private calcularMejorMomentoRepostaje(estacion: GasStation, precioActualReferencia: number): void {

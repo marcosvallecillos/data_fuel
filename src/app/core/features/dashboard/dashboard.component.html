@@ -373,6 +373,9 @@
           <h2 class="detalle-titulo">{{ estacion.marca }}</h2>
           <p class="detalle-direccion">{{ estacion.direccion }}</p>
           <p class="detalle-ubicacion">{{ estacion.codigoPostal }} - {{ estacion.municipio }}</p>
+          @if (estacion.comarca) {
+            <p class="detalle-comarca"><strong>Comarca:</strong> {{ estacion.comarca }}</p>
+          }
           
           <div class="detalle-section">
             <h4>💰 Precios actuales</h4>
@@ -525,6 +528,13 @@
         </div>
 
         <p class="ia-modal-text">{{ recomendacionIaTexto() }}</p>
+
+        @if (consejoGrok()) {
+          <div class="ia-expert-advice">
+            <span class="expert-icon">💡</span>
+            <p class="expert-text"><strong>Consejo del Experto:</strong> {{ consejoGrok() }}</p>
+          </div>
+        }
 
         <div class="ia-modal-divider"></div>
         <h4 class="ia-modal-subtitle">⏱️ Mejor momento para repostar</h4>

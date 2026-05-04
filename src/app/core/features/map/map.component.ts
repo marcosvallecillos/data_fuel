@@ -262,10 +262,10 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges
   // Signal para trackear estaciones cargadas
   estacionesCargadas = signal(0);
   
-  // Configuración por defecto (España)
+  // Configuración por defecto (Valencia)
   private readonly CENTRO_DEFAULT: Coordenadas = {
-    latitud: 40.4168,
-    longitud: -3.7038
+    latitud: 39.4699,
+    longitud: -0.3763
   };
 
   // ============================================================================

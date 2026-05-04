@@ -39,6 +39,7 @@ export class GasStationService {
   private readonly ENDPOINTS = {
     estacionesGeneral: `${this.API_BASE}/EstacionesTerrestres/`,
     estacionesMunicipio: (id: string) => `${this.API_BASE}/EstacionesTerrestres/FiltroMunicipio/${id}`,
+    estacionesProvincia: (id: string) => `${this.API_BASE}/EstacionesTerrestres/FiltroProvincia/${id}`,
     municipios: `${this.API_BASE}/Listados/MunicipiosPorProvincia/`,
     provincias: `${this.API_BASE}/Listados/Provincias/`
   };
@@ -63,6 +64,26 @@ export class GasStationService {
 
   // Último timestamp de actualización
   private ultimaActualizacion?: Date;
+
+  // Diccionarios de soporte (Cargados desde assets)
+  private municipiosComarcas: Record<string, string> = {};
+  private comarcasDict: Record<string, string> = {};
+
+  constructor() {
+    this.cargarDiccionarios();
+  }
+
+  /**
+   * Carga los diccionarios JSON desde los assets
+   */
+  private cargarDiccionarios(): void {
+    this.http.get<Record<string, string>>('assets/data/municipios_comarcas.json').subscribe(data => {
+      this.municipiosComarcas = data;
+    });
+    this.http.get<Record<string, string>>('assets/data/comarcas.json').subscribe(data => {
+      this.comarcasDict = data;
+    });
+  }
 
   // ============================================================================
   // MÉTODOS PRINCIPALES - ENDPOINTS DE LA API
@@ -99,6 +120,29 @@ export class GasStationService {
     
     return this.http.get<EstacionesTerrestresResponse>(
       this.ENDPOINTS.estacionesMunicipio(municipioId)
+    ).pipe(
+      retry(2),
+      map(response => this.normalizarEstaciones(response.ListaEESSPrecio)),
+      tap(estaciones => {
+        this.estacionesSubject.next(estaciones);
+        this.ultimaActualizacion = new Date();
+        this.loadingSubject.next(false);
+      }),
+      catchError(this.handleError),
+      shareReplay(1)
+    );
+  }
+
+  /**
+   * Obtiene estaciones filtradas por provincia
+   * @param provinciaId ID de la provincia (ej: "46" para Valencia)
+   * @returns Observable con array de estaciones de la provincia
+   */
+  getEstacionesPorProvincia(provinciaId: string): Observable<GasStation[]> {
+    this.loadingSubject.next(true);
+    
+    return this.http.get<EstacionesTerrestresResponse>(
+      this.ENDPOINTS.estacionesProvincia(provinciaId)
     ).pipe(
       retry(2),
       map(response => this.normalizarEstaciones(response.ListaEESSPrecio)),
@@ -186,9 +230,21 @@ export class GasStationService {
         glp: this.parsePrecio(estacion['Precio Gases licuados del petróleo'])
       },
       estaAbierta: this.calcularEstadoApertura(estacion['Horario']),
+      esta24h: estacion['Horario']?.toUpperCase().includes('24H'),
+      comarca: this.obtenerComarcaPorMunicipio(estacion['Municipio']),
       ultimaActualizacion: estacion['Fecha'] ? new Date(estacion['Fecha']) : new Date(),
       raw: estacion // Mantener datos originales para debugging
     };
+  }
+
+  /**
+   * Busca la comarca correspondiente a un municipio
+   */
+  public obtenerComarcaPorMunicipio(municipio: string): string {
+    if (!municipio) return 'Desconocida';
+    // Normalizar nombre (quitar /Sagunt etc)
+    const nombreLimpio = municipio.split('/')[0].trim();
+    return this.municipiosComarcas[nombreLimpio] || 'Valencia';
   }
 
   /**

@@ -109,6 +109,8 @@ export interface GasStation {
   };
   distancia?: number;                        // Calculada con Haversine
   estaAbierta?: boolean;                     // Calculada según horario
+  esta24h?: boolean;                        // Si abre las 24 horas
+  comarca?: string;                         // Comarca de Valencia
   ultimaActualizacion: Date;
   raw?: EstacionTerrestre;                   // Datos originales para debugging
 }
