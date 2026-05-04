@@ -8,7 +8,7 @@ import { map, catchError } from 'rxjs/operators';
 })
 export class AiService {
   private readonly http = inject(HttpClient);
-  private readonly API_KEY = '';
+  private readonly API_KEY = ''; // Se cargará desde configuración segura
   private readonly API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
   /**
