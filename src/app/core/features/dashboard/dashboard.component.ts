@@ -25,6 +25,7 @@ import { AlertasService } from '../../services/alertas.service';
 import { ComparacionService } from '../../services/comparacion.service';
 import { ChatbotComponent } from '../chatbot/chatbot.component';
 import { AiService } from '../../services/ai.service';
+import { PrediccionService } from '../../services/prediccion.service';
 
 /**
  * Componente principal del dashboard de Gas-Trend Pro
@@ -55,6 +56,7 @@ export class DashboardComponent implements OnInit {
   private readonly alertasService = inject(AlertasService);
   private readonly comparacionService = inject(ComparacionService);
   private readonly aiService = inject(AiService);
+  private readonly prediccionService = inject(PrediccionService);
 
   // ============================================================================
   // CONSTANTES Y CONFIGURACIÓN
@@ -114,6 +116,7 @@ export class DashboardComponent implements OnInit {
   consejoGrok = signal('');
   litrosEstimados = signal<number>(40);
   consumoLKm = signal<number>(0.06);
+  prediccionFuenteML = signal(false); // true cuando el precio mañana viene del modelo RF
   
   // Computed signals
   estacionesFiltradas = computed(() => 
@@ -162,7 +165,6 @@ export class DashboardComponent implements OnInit {
    */
   private inicializarFormulario(): void {
     this.searchForm = this.fb.group({
-      // Ubicación
       codigoPostal: [''],
       provinciaId: [''],
       municipioId: [''],
@@ -177,6 +179,7 @@ export class DashboardComponent implements OnInit {
       soloAbiertas: [false],
       ordenarPor: ['precio']
     });
+
   }
 
   /**
@@ -784,8 +787,13 @@ export class DashboardComponent implements OnInit {
     });
 
     // Obtener comarca y municipio del punto (de la gasolinera más cercana)
-    const comarcaPunto = candidatasRankeadas[0]?.estacion.comarca || 'Valencia';
+    const comarcaRaw = candidatasRankeadas[0]?.estacion.comarca;
     const municipioPunto = candidatasRankeadas[0]?.estacion.municipio || '';
+    // Si la comarca es el valor por defecto 'Valencia' pero el municipio es de otra zona,
+    // usar el municipio real como zona para la IA
+    const comarcaPunto = (comarcaRaw && comarcaRaw !== 'Valencia')
+      ? comarcaRaw
+      : (municipioPunto || 'España');
 
     this.recomendacionIaTexto.set(
       `Recomendacion IA para ${municipioPunto} (${comarcaPunto}):\n` +
@@ -798,13 +806,37 @@ export class DashboardComponent implements OnInit {
     // Sugerir mejor momento (día) para repostar con histórico simulado
     this.calcularMejorMomentoRepostaje(candidatasRankeadas[0].estacion, candidatasRankeadas[0].precio);
 
-    // Obtener consejo de Grok
-    const precioHoy = this.precioMedio();
-    // Simulamos un precio para mañana basado en la tendencia del modelo
-    const precioManana = precioHoy * 0.9; // 10% menos como en el ejemplo del usuario
-    this.aiService.getConsejoExperto(precioHoy, precioManana, comarcaPunto).subscribe({
-      next: consejo => this.consejoGrok.set(consejo),
-      error: () => this.consejoGrok.set('Mantén tus neumáticos con la presión correcta para ahorrar hasta un 3% en combustible.')
+    // Precio medio de las candidatas cercanas
+    const precioHoy = candidatasRankeadas.reduce((acc, c) => acc + c.precio, 0) / candidatasRankeadas.length;
+    const estRef = candidatasRankeadas[0].estacion;
+
+    // Intenta predecir con el modelo ML (Flask). Si no está disponible, usa variación aleatoria.
+    const distCentro = this.prediccionService.distanciaKm(
+      estRef.latitud, estRef.longitud,
+      39.4699, -0.3763  // referencia Valencia centro
+    );
+    this.prediccionFuenteML.set(false);
+    this.prediccionService.predecirPrecio({
+      latitud:          estRef.latitud,
+      longitud:         estRef.longitud,
+      marca:            estRef.marca,
+      dia_semana:       this.prediccionService.getDiaManana(),
+      hora:             12,
+      distancia_centro: distCentro,
+    }).subscribe(prediccion => {
+      let precioManana: number;
+      if (prediccion) {
+        precioManana = prediccion.precio_predicho;
+        this.prediccionFuenteML.set(true);
+      } else {
+        // Fallback: variación aleatoria ±2%
+        const variacion = (Math.random() - 0.5) * 0.04;
+        precioManana = precioHoy * (1 + variacion);
+      }
+      this.aiService.getConsejoExperto(precioHoy, precioManana, comarcaPunto).subscribe({
+        next: consejo => this.consejoGrok.set(consejo),
+        error: () => this.consejoGrok.set('Mantén tus neumáticos con la presión correcta para ahorrar hasta un 3% en combustible.')
+      });
     });
   }
 

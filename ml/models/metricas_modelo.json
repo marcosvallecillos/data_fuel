@@ -1,0 +1,57 @@
+{
+  "rmse_test": 0.008110707824821569,
+  "rmse_percentage": 0.5917937582647059,
+  "r2_test": 0.9890161075648409,
+  "mae_test": 0.006398218505081013,
+  "cv_rmse": 0.012594494247858063,
+  "n_muestras_train": 4480,
+  "n_muestras_test": 1120,
+  "n_estimators": 150,
+  "max_depth": 20,
+  "features": [
+    "latitud",
+    "longitud",
+    "marca_encoded",
+    "dia_encoded",
+    "hora",
+    "distancia_centro_km",
+    "es_fin_semana",
+    "es_hora_punta"
+  ],
+  "importancias": [
+    {
+      "feature": "marca_encoded",
+      "importancia": 0.5057431097938749
+    },
+    {
+      "feature": "distancia_centro_km",
+      "importancia": 0.39626436376037016
+    },
+    {
+      "feature": "longitud",
+      "importancia": 0.05255903747013356
+    },
+    {
+      "feature": "latitud",
+      "importancia": 0.042498674514950326
+    },
+    {
+      "feature": "hora",
+      "importancia": 0.0017116786504079143
+    },
+    {
+      "feature": "dia_encoded",
+      "importancia": 0.0009344698068477003
+    },
+    {
+      "feature": "es_fin_semana",
+      "importancia": 0.00015437719708354312
+    },
+    {
+      "feature": "es_hora_punta",
+      "importancia": 0.00013428880633182673
+    }
+  ],
+  "fecha_entrenamiento": "2026-05-25T17:24:32.189726",
+  "fuente_datos": "API Real Ministerio (augmentada temporalmente)"
+}

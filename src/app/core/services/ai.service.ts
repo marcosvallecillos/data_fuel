@@ -26,13 +26,13 @@ export class AiService {
       }),
       switchMap(config => {
         const apiKey = config.groqApiKey;
-        const prompt = `Eres un asesor energético experto en el sector de las gasolineras en la Comunidad Valenciana. 
+        const prompt = `Eres un asesor energético experto en precios de combustible en España.
         Analiza los datos:
         - Precio medio actual en ${zona}: ${hoy} €/L
         - Precio estimado para mañana en ${zona}: ${manana} €/L
         
         Tu tarea:
-        Escribir un consejo breve (máximo 20 palabras), práctico y claro para el usuario de nuestra app.
+        Escribir un consejo breve (máximo 40 palabras), práctico, amigable y claro para el usuario de nuestra app.
         El tono debe ser cercano y útil, como de "colega a colega".
         
         Recomendaciones:
@@ -45,7 +45,7 @@ export class AiService {
         - Solo el texto del consejo. 
         - Sin emoticonos.
         - Sin introducciones ni coletillas (ej. "Aquí tienes tu consejo:").
-        - Máximo 20 palabras.
+        - Máximo 40 palabras.
         - Incluye siempre el nombre de la zona: "${zona}".`;
 
         const body = {

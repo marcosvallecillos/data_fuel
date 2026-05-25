@@ -1,0 +1,21 @@
+{
+  "marcas": [
+    "BALLENOIL",
+    "BP",
+    "CEPSA",
+    "GALP",
+    "OTRA",
+    "PLENOIL",
+    "REPSOL",
+    "SHELL"
+  ],
+  "dias": [
+    "Domingo",
+    "Jueves",
+    "Lunes",
+    "Martes",
+    "Miércoles",
+    "Sábado",
+    "Viernes"
+  ]
+}

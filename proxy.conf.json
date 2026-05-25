@@ -1,0 +1,11 @@
+{
+  "/api-ml": {
+    "target": "http://localhost:5000",
+    "secure": false,
+    "changeOrigin": true,
+    "pathRewrite": {
+      "^/api-ml": ""
+    },
+    "logLevel": "debug"
+  }
+}
