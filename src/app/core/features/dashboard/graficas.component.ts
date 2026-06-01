@@ -257,7 +257,7 @@ export class GraficasComponent implements AfterViewInit, OnDestroy {
             data: data.map(d => d.precioNacional),
             smooth: true,
             symbol: 'none',
-            lineStyle: { width: 3, color: '#94a3b8', type: 'dashed' },
+            lineStyle: { width: 3, color: '#1384e0ff', type: 'dashed' },
             emphasis: { focus: 'series' }
           },
           {
@@ -267,7 +267,7 @@ export class GraficasComponent implements AfterViewInit, OnDestroy {
             smooth: true,
             symbol: 'circle',
             symbolSize: 8,
-            itemStyle: { color: '#2563eb', borderWidth: 2, borderColor: '#fff' },
+            itemStyle: { color: '#00115cff', borderWidth: 2, borderColor: '#fff' },
             lineStyle: { width: 4, shadowColor: 'rgba(37, 99, 235, 0.3)', shadowBlur: 10, shadowOffsetY: 5 },
             areaStyle: {
               color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [

@@ -1,9 +1,9 @@
 {
-  "rmse_test": 0.008110707824821569,
-  "rmse_percentage": 0.5917937582647059,
-  "r2_test": 0.9890161075648409,
-  "mae_test": 0.006398218505081013,
-  "cv_rmse": 0.012594494247858063,
+  "rmse_test": 0.00811070782482156,
+  "rmse_percentage": 0.5917937582647053,
+  "r2_test": 0.989016107564841,
+  "mae_test": 0.0063982185050810055,
+  "cv_rmse": 0.012594494247858065,
   "n_muestras_train": 4480,
   "n_muestras_test": 1120,
   "n_estimators": 150,
@@ -52,6 +52,6 @@
       "importancia": 0.00013428880633182673
     }
   ],
-  "fecha_entrenamiento": "2026-05-25T17:24:32.189726",
+  "fecha_entrenamiento": "2026-05-28T16:02:43.406133",
   "fuente_datos": "API Real Ministerio (augmentada temporalmente)"
 }

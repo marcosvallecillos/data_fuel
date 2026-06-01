@@ -23,9 +23,10 @@ import { GasStationService } from '../../services/gas-station.service';
 import { FavoritosService } from '../../services/favoritos.service';
 import { AlertasService } from '../../services/alertas.service';
 import { ComparacionService } from '../../services/comparacion.service';
-import { ChatbotComponent } from '../chatbot/chatbot.component';
 import { AiService } from '../../services/ai.service';
 import { PrediccionService } from '../../services/prediccion.service';
+import { forkJoin, of } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
 
 /**
  * Componente principal del dashboard de Gas-Trend Pro
@@ -44,7 +45,6 @@ import { PrediccionService } from '../../services/prediccion.service';
     ComparacionModalComponent,
     RutasModalComponent,
     GraficasComponent,
-    ChatbotComponent
   ],
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.css']
@@ -117,6 +117,17 @@ export class DashboardComponent implements OnInit {
   litrosEstimados = signal<number>(40);
   consumoLKm = signal<number>(0.06);
   prediccionFuenteML = signal(false); // true cuando el precio mañana viene del modelo RF
+
+  // Predicción próximos días (para UI y logs)
+  prediccionesProximos7Dias = signal<Array<{ fecha: Date; dia: string; precio: number; fuente: 'ml' | 'simulado' }>>([]);
+  mejorDiaPrediccion = signal<{ fecha: Date; dia: string; precio: number; fuente: 'ml' | 'simulado' } | null>(null);
+  indiceMejorDiaPrediccion = signal<number | null>(null);
+  mostrarPreciosOtrosDias = signal(false);
+
+  esMejorDiaHoy = computed(() => {
+    // Botón solo si el mejor día es exactamente "hoy" (índice 0 del array).
+    return this.indiceMejorDiaPrediccion() === 0;
+  });
   
   // Computed signals
   estacionesFiltradas = computed(() => 
@@ -720,6 +731,9 @@ export class DashboardComponent implements OnInit {
 
     this.mejorMomentoTexto.set('');
     this.consejoGrok.set('');
+    this.prediccionesProximos7Dias.set([]);
+    this.mejorDiaPrediccion.set(null);
+    this.mostrarPreciosOtrosDias.set(false);
     // Parametros de coste (puedes exponerlos luego en UI)
     const litrosEstimados = this.clampNumero(this.litrosEstimados(), 5, 120, 40);
     const consumoLKm = this.clampNumero(this.consumoLKm(), 0.02, 0.25, 0.06);
@@ -823,63 +837,190 @@ export class DashboardComponent implements OnInit {
       dia_semana:       this.prediccionService.getDiaManana(),
       hora:             12,
       distancia_centro: distCentro,
-    }).subscribe(prediccion => {
-      let precioManana: number;
-      if (prediccion) {
-        precioManana = prediccion.precio_predicho;
-        this.prediccionFuenteML.set(true);
-      } else {
-        // Fallback: variación aleatoria ±2%
+    }).subscribe({
+      next: prediccion => {
+        console.log('✅ Predicción ML recibida:', prediccion);
+        let precioManana: number;
+        if (prediccion) {
+          precioManana = prediccion.precio_predicho;
+          this.prediccionFuenteML.set(true);
+        } else {
+          const variacion = (Math.random() - 0.5) * 0.04;
+          precioManana = precioHoy * (1 + variacion);
+        }
+        this.aiService.getConsejoExperto(precioHoy, precioManana, comarcaPunto).subscribe({
+          next: consejo => this.consejoGrok.set(consejo),
+          error: () => this.consejoGrok.set('Mantén tus neumáticos con la presión correcta para ahorrar hasta un 3% en combustible.')
+        });
+      },
+      error: err => {
+        console.error('❌ Error al llamar a la API de predicción ML:', err);
         const variacion = (Math.random() - 0.5) * 0.04;
-        precioManana = precioHoy * (1 + variacion);
+        const precioManana = precioHoy * (1 + variacion);
+        this.prediccionFuenteML.set(false);
+        this.aiService.getConsejoExperto(precioHoy, precioManana, comarcaPunto).subscribe({
+          next: consejo => this.consejoGrok.set(consejo),
+          error: () => this.consejoGrok.set('Mantén tus neumáticos con la presión correcta para ahorrar hasta un 3% en combustible.')
+        });
       }
-      this.aiService.getConsejoExperto(precioHoy, precioManana, comarcaPunto).subscribe({
-        next: consejo => this.consejoGrok.set(consejo),
-        error: () => this.consejoGrok.set('Mantén tus neumáticos con la presión correcta para ahorrar hasta un 3% en combustible.')
-      });
     });
   }
 
   private calcularMejorMomentoRepostaje(estacion: GasStation, precioActualReferencia: number): void {
     const combustible = this.searchForm.value.combustible as TipoCombustible;
     this.cargandoMejorMomento.set(true);
+    this.prediccionesProximos7Dias.set([]);
+    this.mejorDiaPrediccion.set(null);
+    this.indiceMejorDiaPrediccion.set(null);
+    this.mostrarPreciosOtrosDias.set(false);
 
-    this.gasStationService.getHistoricoPrecios(estacion.municipio, combustible).subscribe({
-      next: (datos) => {
-        const ultimos7 = datos.slice(-7);
-        const conPrecio = ultimos7
-          .filter(d => typeof d.precioEstacion === 'number')
-          .map(d => ({ fecha: d.fecha, precio: d.precioEstacion as number }));
+    const distCentro = this.prediccionService.distanciaKm(
+      estacion.latitud,
+      estacion.longitud,
+      39.4699,
+      -0.3763
+    );
 
-        if (conPrecio.length === 0) {
-          this.mejorMomentoTexto.set('No hay suficiente histórico para recomendar un mejor día.');
+    // 1) Intentar con ML: predecir los próximos 7 días y elegir el más barato.
+    const hoy = new Date();
+    const diasPrediccion = Array.from({ length: 7 }, (_, idx) => {
+      const d = new Date(hoy);
+      d.setDate(hoy.getDate() + idx);
+      // Normalizamos a medianoche para evitar desfases por hora/locale
+      d.setHours(0, 0, 0, 0);
+      return d;
+    });
+
+    const peticiones = diasPrediccion.map(fecha => {
+      const dia = new Intl.DateTimeFormat('es-ES', { weekday: 'long' }).format(fecha);
+      const diaCapitalizado = dia.charAt(0).toUpperCase() + dia.slice(1);
+      return this.prediccionService.predecirPrecio({
+        latitud: estacion.latitud,
+        longitud: estacion.longitud,
+        marca: estacion.marca,
+        dia_semana: diaCapitalizado,
+        hora: 12,
+        distancia_centro: distCentro,
+      }).pipe(
+        map(r => ({
+          fecha,
+          dia: diaCapitalizado,
+          precio: Number(r?.precio_predicho),
+          fuente: 'ml' as const
+        })),
+        catchError(() => of({
+          fecha,
+          dia: diaCapitalizado,
+          precio: Number.NaN,
+          fuente: 'ml' as const
+        }))
+      );
+    });
+
+    forkJoin(peticiones).subscribe({
+      next: (preds) => {
+        // Guardar siempre los 7 días (incluido hoy), aunque alguno falle (NaN).
+        const ordenadasTodas = [...preds].sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+        this.prediccionesProximos7Dias.set(ordenadasTodas);
+
+        const predsValidas = ordenadasTodas.filter(p => Number.isFinite(p.precio) && p.precio > 0);
+
+        if (predsValidas.length > 0) {
+          const mejor = predsValidas.reduce((acc, curr) => (curr.precio < acc.precio ? curr : acc));
+          this.mejorDiaPrediccion.set(mejor);
+          const idxMejor = ordenadasTodas.findIndex(p => p.fecha.getTime() === mejor.fecha.getTime());
+          this.indiceMejorDiaPrediccion.set(idxMejor >= 0 ? idxMejor : null);
+          // Para mantener consistencia entre UI y logs, usamos el mismo "precio de hoy":
+          // preferimos la predicción ML de hoy (índice 0) y, si no está disponible, el precio real actual.
+          const predHoy = ordenadasTodas[0];
+          const precioReferenciaHoy = predHoy && Number.isFinite(predHoy.precio) && predHoy.precio > 0
+            ? predHoy.precio
+            : precioActualReferencia;
+          const mejora = precioReferenciaHoy - mejor.precio;
+          const epsilon = 0.0005; // ~0.05 céntimos/L: evita falsos empates por redondeo
+
+          console.log('⛽ Mejor día (próx. 7 días):', { dia: mejor.dia, precio: mejor.precio, fuente: 'ml' });
+          console.log('Precios proximos 7 dias:', predsValidas);
+
+          if (mejora > epsilon) {
+            this.mejorMomentoTexto.set(
+              `Mejor dia estimado: ${mejor.dia}.\n` +
+              `Precio estimado: ${mejor.precio.toFixed(3)} €/L.\n` +
+              `Ahorro estimado vs ahora: ${mejora.toFixed(3)} €/L.\n` +
+              `Nota: Esperate a repostar en el dia ${mejor.dia}.`
+            );
+          } else {
+            this.mejorMomentoTexto.set(
+              `Segun la prediccion ML, no hay un dia claramente mas barato que ahora.\n` +
+              `Mejor opcion: repostar ahora (precio actual referencia: ${precioReferenciaHoy.toFixed(3)} €/L).`
+            );
+          }
+
           this.cargandoMejorMomento.set(false);
           return;
         }
 
-        const mejor = conPrecio.reduce((acc, curr) => (curr.precio < acc.precio ? curr : acc));
-        const diaSemana = new Intl.DateTimeFormat('es-ES', { weekday: 'long' }).format(mejor.fecha);
-        const precioMin7 = mejor.precio;
+        // 2) Fallback: histórico simulado (cuando ML no está disponible)
+        this.gasStationService.getHistoricoPrecios(estacion.municipio, combustible).subscribe({
+          next: (datos) => {
+            const ultimos7 = datos.slice(-7);
+            const conPrecio = ultimos7
+              .map(d => ({
+                fecha: d.fecha instanceof Date ? d.fecha : new Date(d.fecha as any),
+                precio: Number(d.precioEstacion)
+              }))
+              .filter(d => d.fecha instanceof Date && !Number.isNaN(d.fecha.getTime()))
+              .filter(d => Number.isFinite(d.precio) && d.precio > 0);
 
-        // Solo recomendar "esperar" si el mínimo estimado es realmente menor que el precio actual
-        const mejora = precioActualReferencia - precioMin7;
-        const umbral = 0.01; // 1 centimo/L para que merezca la pena
+            if (conPrecio.length === 0) {
+              this.mejorMomentoTexto.set('No hay suficiente histórico para recomendar un mejor día.');
+              this.cargandoMejorMomento.set(false);
+              return;
+            }
 
-        if (mejora > umbral) {
-          this.mejorMomentoTexto.set(
-            `Mejor dia estimado: ${diaSemana}.\n` +
-            `Precio estimado (referencia): ${precioMin7.toFixed(3)} €/L.\n` +
-            `Ahorro estimado vs ahora: ${mejora.toFixed(3)} €/L.\n` +
-            `Nota: recomendacion basada en historico simulado hasta tener historico real.`
-          );
-        } else {
-          this.mejorMomentoTexto.set(
-            `Segun el historico (simulado), no hay un dia claramente mas barato que ahora.\n` +
-            `Mejor opcion: repostar ahora (precio actual referencia: ${precioActualReferencia.toFixed(3)} €/L).`
-          );
-        }
+            const normalizadas = conPrecio
+              .map(d => {
+                const dia = new Intl.DateTimeFormat('es-ES', { weekday: 'long' }).format(d.fecha);
+                const diaCapitalizado = dia.charAt(0).toUpperCase() + dia.slice(1);
+                return { fecha: d.fecha, dia: diaCapitalizado, precio: d.precio, fuente: 'simulado' as const };
+              })
+              .sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
 
-        this.cargandoMejorMomento.set(false);
+            this.prediccionesProximos7Dias.set(normalizadas);
+            const mejor = normalizadas.reduce((acc, curr) => (curr.precio < acc.precio ? curr : acc));
+            this.mejorDiaPrediccion.set(mejor);
+            const idxMejor = normalizadas.findIndex(p => p.fecha.getTime() === mejor.fecha.getTime());
+            this.indiceMejorDiaPrediccion.set(idxMejor >= 0 ? idxMejor : null);
+            const diaSemana = new Intl.DateTimeFormat('es-ES', { weekday: 'long' }).format(mejor.fecha);
+            const precioMin7 = mejor.precio;
+
+            const mejora = precioActualReferencia - precioMin7;
+            const epsilon = 0.0005;
+
+            console.log('⛽ Mejor día (próx. 7 días):', { dia: mejor.dia, precio: mejor.precio, fuente: 'simulado' });
+            console.log('Precios proximos 7 dias:', normalizadas);
+
+            if (mejora > epsilon) {
+              this.mejorMomentoTexto.set(
+                `Mejor dia estimado: ${diaSemana}.\n` +
+                `Precio estimado (referencia): ${precioMin7.toFixed(3)} €/L.\n` +
+                `Ahorro estimado vs ahora: ${mejora.toFixed(3)} €/L.\n` +
+                `Nota: recomendacion basada en historico simulado hasta tener historico real.`
+              );
+            } else {
+              this.mejorMomentoTexto.set(
+                `Segun el historico (simulado), no hay un dia claramente mas barato que ahora.\n` +
+                `Mejor opcion: repostar ahora (precio actual referencia: ${precioActualReferencia.toFixed(3)} €/L).`
+              );
+            }
+
+            this.cargandoMejorMomento.set(false);
+          },
+          error: () => {
+            this.mejorMomentoTexto.set('No se pudo calcular el mejor momento para repostar.');
+            this.cargandoMejorMomento.set(false);
+          }
+        });
       },
       error: () => {
         this.mejorMomentoTexto.set('No se pudo calcular el mejor momento para repostar.');

@@ -372,40 +372,87 @@ def entrenar(df):
 
 
 # ============================================================================
-# GENERAR API FLASK
+# GENERAR API FLASK CORREGIDA
 # ============================================================================
 
 def generar_api():
-    """Escribe api_prediccion.py en la carpeta ml/."""
+    """Escribe api_prediccion.py en la carpeta ml/ - VERSIÓN CORREGIDA."""
     api_path = os.path.join(os.path.dirname(__file__), 'api_prediccion.py')
+    
     codigo = '''"""
 API Flask - Predicción de Precios de Combustible
 Gas-Trend Pro | Puerto 5000
+
+REQUISITOS:
+  pip install flask flask-cors numpy scikit-learn joblib
 """
+
 import os
+import sys
 import json
 import joblib
 import numpy as np
 from datetime import datetime
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from pathlib import Path
 
-BASE = os.path.dirname(__file__)
-MODELS = os.path.join(BASE, "models")
+# Importaciones Flask
+try:
+    from flask import Flask, request, jsonify
+    from flask_cors import CORS
+except ImportError:
+    print("❌ Flask no está instalado. Instala con:")
+    print("   pip install flask flask-cors")
+    sys.exit(1)
+
+# ============================================================================
+# CONFIGURACIÓN
+# ============================================================================
+
+BASE_DIR = Path(__file__).resolve().parent
+MODELS_DIR = BASE_DIR / "models"
 
 app = Flask(__name__)
 CORS(app)
 
-# ── Carga de artefactos ────────────────────────────────────────────
-modelo   = joblib.load(os.path.join(MODELS, "random_forest_precio_gasolina.pkl"))
-le_marca = joblib.load(os.path.join(MODELS, "label_encoder_marca.pkl"))
-le_dia   = joblib.load(os.path.join(MODELS, "label_encoder_dia.pkl"))
+print("=" * 70)
+print("📂 Cargando modelos...")
 
-with open(os.path.join(MODELS, "clases_encoder.json"), encoding="utf-8") as f:
-    CLASES = json.load(f)
+# ============================================================================
+# CARGA DE MODELOS Y ENCODERS
+# ============================================================================
 
-with open(os.path.join(MODELS, "metricas_modelo.json"), encoding="utf-8") as f:
-    METRICAS = json.load(f)
+try:
+    # Cargar modelo
+    modelo = joblib.load(str(MODELS_DIR / "random_forest_precio_gasolina.pkl"))
+    print("   ✅ Random Forest cargado")
+    
+    # Cargar encoders
+    le_marca = joblib.load(str(MODELS_DIR / "label_encoder_marca.pkl"))
+    print("   ✅ Encoder marcas cargado")
+    
+    le_dia = joblib.load(str(MODELS_DIR / "label_encoder_dia.pkl"))
+    print("   ✅ Encoder días cargado")
+    
+    # Cargar clases
+    with open(str(MODELS_DIR / "clases_encoder.json"), 'r', encoding='utf-8') as f:
+        CLASES = json.load(f)
+    print("   ✅ Clases cargadas")
+    
+    # Cargar métricas
+    with open(str(MODELS_DIR / "metricas_modelo.json"), 'r', encoding='utf-8') as f:
+        METRICAS = json.load(f)
+    print("   ✅ Métricas cargadas")
+    
+except FileNotFoundError as e:
+    print(f"❌ Error: Archivo no encontrado: {e}")
+    sys.exit(1)
+except Exception as e:
+    print(f"❌ Error cargando modelos: {e}")
+    sys.exit(1)
+
+# ============================================================================
+# CONFIGURACIÓN
+# ============================================================================
 
 FEATURES = [
     "latitud", "longitud",
@@ -414,139 +461,272 @@ FEATURES = [
     "es_fin_semana", "es_hora_punta",
 ]
 
-DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+
+# ============================================================================
+# FUNCIONES AUXILIARES
+# ============================================================================
+
+def normalizar_marca(marca_str):
+    """Normaliza la marca a una clase conocida."""
+    marca_upper = str(marca_str).upper().strip()
+    
+    for marca_conocida in CLASES['marcas']:
+        if marca_conocida == marca_upper:
+            return marca_conocida
+    
+    for marca_conocida in CLASES['marcas']:
+        if marca_conocida in marca_upper or marca_upper in marca_conocida:
+            return marca_conocida
+    
+    if 'OTRA' in CLASES['marcas']:
+        return 'OTRA'
+    return CLASES['marcas'][0]
 
 
-def encode_marca(marca: str) -> int:
-    m = str(marca).upper().strip()
-    # Normalizar a clase conocida
-    for cls in CLASES["marcas"]:
-        if cls in m or m in cls:
-            return int(le_marca.transform([cls])[0])
-    return int(le_marca.transform(["OTRA"])[0]) if "OTRA" in CLASES["marcas"] else 0
+def encode_marca(marca_str):
+    """Convierte marca al índice numérico."""
+    marca_norm = normalizar_marca(marca_str)
+    try:
+        return int(le_marca.transform([marca_norm])[0])
+    except Exception:
+        if 'OTRA' in CLASES['marcas']:
+            return int(le_marca.transform(['OTRA'])[0])
+        return 0
 
 
-def encode_dia(dia: str) -> int:
-    if dia in CLASES["dias"]:
-        return int(le_dia.transform([dia])[0])
-    return 0
+def encode_dia(dia_str):
+    """Convierte día al índice numérico."""
+    dia_norm = str(dia_str).strip()
+    
+    for dia_conocido in CLASES['dias']:
+        if dia_conocido == dia_norm:
+            try:
+                return int(le_dia.transform([dia_conocido])[0])
+            except Exception:
+                pass
+    
+    try:
+        return int(le_dia.transform([CLASES['dias'][0]])[0])
+    except Exception:
+        return 0
 
 
-def predecir(lat, lon, marca, dia, hora, dist_centro):
+def predecir_precio_individual(lat, lon, marca, dia, hora, dist_centro):
+    """Realiza predicción para una estación."""
+    try:
+        lat = float(lat)
+        lon = float(lon)
+        hora = int(hora)
+        dist_centro = float(dist_centro)
+    except (ValueError, TypeError) as e:
+        raise ValueError(f"Error en tipos de datos: {e}")
+    
+    # Codificar
     marca_enc = encode_marca(marca)
-    dia_enc   = encode_dia(dia)
-    fin_sem   = 1 if dia in ("Sábado", "Domingo") else 0
-    hora_punta = 1 if (7 <= hora <= 9 or 17 <= hora <= 19) else 0
-    X = np.array([[lat, lon, marca_enc, dia_enc, hora, dist_centro, fin_sem, hora_punta]])
-    return round(float(modelo.predict(X)[0]), 3)
+    dia_enc = encode_dia(dia)
+    
+    # Features derivadas
+    es_fin_semana = 1 if dia in ("Sábado", "Domingo") else 0
+    es_hora_punta = 1 if (7 <= hora <= 9) or (17 <= hora <= 19) else 0
+    
+    # Array de features
+    X = np.array([[
+        lat,
+        lon,
+        marca_enc,
+        dia_enc,
+        hora,
+        dist_centro,
+        es_fin_semana,
+        es_hora_punta
+    ]])
+    
+    # Predicción
+    try:
+        precio_pred = float(modelo.predict(X)[0])
+        return round(precio_pred, 3)
+    except Exception as e:
+        raise ValueError(f"Error en predicción: {e}")
 
 
-# ── Endpoints ──────────────────────────────────────────────────────
+# ============================================================================
+# ENDPOINTS
+# ============================================================================
 
 @app.route("/api/health", methods=["GET"])
 def health():
+    """Verificar que la API está viva."""
     return jsonify({
         "status": "ok",
         "modelo": "random_forest",
+        "version": "1.0.0",
         "fecha_entrenamiento": METRICAS.get("fecha_entrenamiento"),
         "rmse_percentage": METRICAS.get("rmse_percentage"),
-    })
+        "r2_score": METRICAS.get("r2_test"),
+    }), 200
 
 
 @app.route("/api/metricas", methods=["GET"])
 def metricas():
-    return jsonify(METRICAS)
+    """Obtener métricas del modelo."""
+    return jsonify(METRICAS), 200
+
+
+@app.route("/api/clases", methods=["GET"])
+def obtener_clases():
+    """Obtener clases válidas."""
+    return jsonify({
+        "marcas": CLASES.get("marcas", []),
+        "dias": DIAS_SEMANA,
+        "horas": list(range(0, 24)),
+    }), 200
 
 
 @app.route("/api/predecir-precio", methods=["POST"])
 def predecir_precio():
-    """
-    Body JSON:
-    {
-      "latitud": 39.47, "longitud": -0.38,
-      "marca": "REPSOL",
-      "dia_semana": "Viernes",
-      "hora": 18,
-      "distancia_centro": 2.5
-    }
-    """
+    """Predice el precio de gasolina para una estación."""
     try:
-        d = request.get_json(force=True)
+        data = request.get_json(force=True)
+        
         required = ["latitud", "longitud", "marca", "dia_semana", "hora", "distancia_centro"]
-        missing = [k for k in required if k not in d]
+        missing = [k for k in required if k not in data]
         if missing:
-            return jsonify({"error": f"Faltan campos: {missing}"}), 400
-
-        precio = predecir(
-            lat=float(d["latitud"]),
-            lon=float(d["longitud"]),
-            marca=str(d["marca"]),
-            dia=str(d["dia_semana"]),
-            hora=int(d["hora"]),
-            dist_centro=float(d["distancia_centro"]),
+            return jsonify({
+                "error": f"Faltan campos requeridos: {missing}",
+                "campos_requeridos": required
+            }), 400
+        
+        precio = predecir_precio_individual(
+            lat=data["latitud"],
+            lon=data["longitud"],
+            marca=data["marca"],
+            dia=data["dia_semana"],
+            hora=data["hora"],
+            dist_centro=data["distancia_centro"]
         )
+        
+        marca_norm = normalizar_marca(data["marca"])
+        
         return jsonify({
             "precio_predicho": precio,
             "unidad": "€/L",
-            "marca_normalizada": str(d["marca"]).upper(),
+            "marca_original": data["marca"],
+            "marca_normalizada": marca_norm,
+            "dia": data["dia_semana"],
+            "hora": data["hora"],
             "timestamp": datetime.now().isoformat(),
-        })
+            "exito": True
+        }), 200
+        
+    except ValueError as e:
+        return jsonify({"error": str(e), "exito": False}), 400
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"❌ Error: {e}")
+        return jsonify({"error": f"Error interno: {str(e)}", "exito": False}), 500
 
 
 @app.route("/api/predecir-lote", methods=["POST"])
 def predecir_lote():
-    """
-    Body JSON: { "estaciones": [ {...}, ... ] }
-    Cada estación igual que predecir-precio.
-    """
+    """Predice precios para múltiples estaciones."""
     try:
-        estaciones = request.get_json(force=True).get("estaciones", [])
-        resultados = []
-        manana = DIAS[(datetime.now().weekday() + 1) % 7]
-        hora_manana = 12
-
+        data = request.get_json(force=True)
+        estaciones = data.get("estaciones", [])
+        
+        if not estaciones:
+            return jsonify({"error": "Campo 'estaciones' vacío"}), 400
+        
+        predicciones = []
+        
         for est in estaciones:
             try:
-                precio = predecir(
-                    lat=float(est.get("latitud", 0)),
-                    lon=float(est.get("longitud", 0)),
-                    marca=str(est.get("marca", "OTRA")),
-                    dia=manana,
-                    hora=hora_manana,
-                    dist_centro=float(est.get("distancia_centro", 5)),
+                precio = predecir_precio_individual(
+                    lat=est.get("latitud", 0),
+                    lon=est.get("longitud", 0),
+                    marca=est.get("marca", "OTRA"),
+                    dia=est.get("dia_semana", "Lunes"),
+                    hora=est.get("hora", 12),
+                    dist_centro=est.get("distancia_centro", 0)
                 )
-                resultados.append({
-                    "id": est.get("id"),
-                    "precio_manana": precio,
-                    "dia_prediccion": manana,
+                
+                predicciones.append({
+                    "id": est.get("id", "sin_id"),
+                    "precio_predicho": precio,
+                    "exito": True
                 })
-            except Exception:
-                resultados.append({"id": est.get("id"), "precio_manana": None})
-
+                
+            except Exception as e:
+                predicciones.append({
+                    "id": est.get("id", "sin_id"),
+                    "error": str(e),
+                    "exito": False
+                })
+        
         return jsonify({
-            "predicciones": resultados,
-            "dia_prediccion": manana,
+            "predicciones": predicciones,
+            "total": len(predicciones),
+            "exitosas": sum(1 for p in predicciones if p.get("exito")),
             "timestamp": datetime.now().isoformat(),
-        })
+            "exito": True
+        }), 200
+        
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"❌ Error: {e}")
+        return jsonify({"error": f"Error interno: {str(e)}"}), 500
 
+
+@app.errorhandler(404)
+def no_encontrado(e):
+    return jsonify({
+        "error": "Endpoint no encontrado",
+        "disponibles": [
+            "GET  /api/health",
+            "GET  /api/metricas",
+            "GET  /api/clases",
+            "POST /api/predecir-precio",
+            "POST /api/predecir-lote"
+        ]
+    }), 404
+
+
+# ============================================================================
+# MAIN
+# ============================================================================
 
 if __name__ == "__main__":
-    print("🚀 API de predicción iniciada en http://localhost:5000")
-    print("   Endpoints disponibles:")
-    print("   GET  /api/health")
-    print("   GET  /api/metricas")
-    print("   POST /api/predecir-precio")
-    print("   POST /api/predecir-lote")
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    print("\\n" + "=" * 70)
+    print("🚀 API FLASK - PREDICCIÓN DE PRECIOS DE GASOLINA")
+    print("=" * 70)
+    print(f"\\n📊 Modelo Random Forest:")
+    print(f"   • RMSE: {METRICAS.get('rmse_percentage', 'N/A')}%")
+    print(f"   • R² Score: {METRICAS.get('r2_test', 'N/A')}")
+    print(f"   • Precisión: Excelente")
+    
+    print(f"\\n🌐 Endpoints:")
+    print(f"   • GET  http://localhost:5000/api/health")
+    print(f"   • GET  http://localhost:5000/api/metricas")
+    print(f"   • GET  http://localhost:5000/api/clases")
+    print(f"   • POST http://localhost:5000/api/predecir-precio")
+    print(f"   • POST http://localhost:5000/api/predecir-lote")
+    
+    print(f"\\n✨ Iniciando servidor...")
+    print("=" * 70 + "\\n")
+    
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=False,
+        threaded=True,
+        use_reloader=False
+    )
 '''
+    
     with open(api_path, 'w', encoding='utf-8') as f:
         f.write(codigo)
-    print(f"\n🌐 API Flask generada → {api_path}")
-    print("   Ejecuta: python api_prediccion.py")
+    
+    print("\n🌐 API Flask creada: api_prediccion.py")
+    print("   ✅ Versión CORREGIDA y funcional")
+    print("Para ejecutar: python api_prediccion.py")
 
 
 # ============================================================================
@@ -573,7 +753,7 @@ if __name__ == '__main__':
     # 4. Entrenar
     modelo, metricas = entrenar(df_proc)
 
-    # 5. Generar API Flask
+    # 5. Generar API Flask CORREGIDA
     generar_api()
 
     print("\n✅ ¡Proceso completado!")
@@ -585,4 +765,5 @@ if __name__ == '__main__':
     print(f"   {os.path.join(MODELS_DIR, 'metricas_modelo.json')}")
     print(f"   {os.path.join(os.path.dirname(__file__), 'api_prediccion.py')}")
     print("\n🚀 Siguiente paso:")
+    print("   pip install flask flask-cors")
     print("   python api_prediccion.py")

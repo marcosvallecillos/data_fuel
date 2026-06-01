@@ -275,6 +275,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges
   ngOnInit(): void {
     // Configurar iconos por defecto de Leaflet
     this.configurarIconosLeaflet();
+    window.addEventListener('favorito-toggle', this.onFavoritoToggle as EventListener);
+    window.addEventListener('ver-detalles', this.onVerDetalles as EventListener);
   }
 
   ngAfterViewInit(): void {
@@ -302,6 +304,8 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges
 
   ngOnDestroy(): void {
     // Limpiar recursos
+    window.removeEventListener('favorito-toggle', this.onFavoritoToggle as EventListener);
+    window.removeEventListener('ver-detalles', this.onVerDetalles as EventListener);
     if (this.map) {
       this.map.remove();
     }
@@ -664,4 +668,30 @@ export class MapComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges
         return undefined;
     }
   }
+
+  // ============================================================================
+  // EVENTOS DE POPUP (CUSTOM EVENTS)
+  // ============================================================================
+
+  private onFavoritoToggle = (event: Event): void => {
+    const customEvent = event as CustomEvent<string>;
+    const estacionId = customEvent.detail;
+    if (!estacionId) return;
+
+    const estacion = this.estaciones.find(e => e.id === estacionId);
+    if (!estacion) return;
+
+    this.favoritoAgregado.emit(estacion);
+  };
+
+  private onVerDetalles = (event: Event): void => {
+    const customEvent = event as CustomEvent<string>;
+    const estacionId = customEvent.detail;
+    if (!estacionId) return;
+
+    const estacion = this.estaciones.find(e => e.id === estacionId);
+    if (!estacion) return;
+
+    this.estacionSeleccionada.emit(estacion);
+  };
 }

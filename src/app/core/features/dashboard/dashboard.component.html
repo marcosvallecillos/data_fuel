@@ -256,6 +256,7 @@
               [combustibleSeleccionado]="searchForm.value.combustible"
               [centroInicial]="ubicacionUsuario()"
               [modoSeleccionPunto]="modoSeleccionPunto()"
+              (favoritoAgregado)="toggleFavorito($event)"
               (puntoSeleccionado)="onPuntoMapaSeleccionado($event)"
               (estacionSeleccionada)="onEstacionSeleccionada($event)">
             </app-map>
@@ -371,6 +372,16 @@
       <div class="side-panel-content">
         @if (estacionSeleccionada(); as estacion) {
           <h2 class="detalle-titulo">{{ estacion.marca }}</h2>
+
+          @if (estacion.estaAbierta !== undefined) {
+              <p class="card-status d-flex 
+              justify-content: space;
+              align-items: center;" [class.abierta]="estacion.estaAbierta">
+              <span>
+                {{ estacion.estaAbierta ? '🟢 Abierta' : '🔴 Cerrada' }}
+              </span>
+              </p>
+          }
           <p class="detalle-direccion">{{ estacion.direccion }}</p>
           <p class="detalle-ubicacion">{{ estacion.codigoPostal }} - {{ estacion.municipio }}</p>
           @if (estacion.comarca) {
@@ -541,6 +552,24 @@
           <p class="ia-modal-text">Calculando mejor momento...</p>
         } @else if (mejorMomentoTexto()) {
           <p class="ia-modal-text">{{ mejorMomentoTexto() }}</p>
+
+          @if (esMejorDiaHoy() && prediccionesProximos7Dias().length > 1) {
+            <div style="margin-top: 10px;">
+              <button class="btn btn-secondary btn-block" (click)="mostrarPreciosOtrosDias.set(!mostrarPreciosOtrosDias())">
+                {{ mostrarPreciosOtrosDias() ? 'Ocultar precios de otros días' : 'Ver precios de los demás días' }}
+              </button>
+            </div>
+
+            @if (mostrarPreciosOtrosDias()) {
+              <div style="margin-top: 10px;">
+                @for (p of prediccionesProximos7Dias().slice(1); track p.fecha) {
+                  <p class="ia-modal-text" style="margin: 4px 0;">
+                    {{ p.dia }}: {{ p.precio.toFixed(3) }} €/L
+                  </p>
+                }
+              </div>
+            }
+          }
         } @else {
           <p class="ia-modal-text">Selecciona una chincheta para ver la recomendacion.</p>
         }
